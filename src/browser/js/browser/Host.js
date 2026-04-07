@@ -15,15 +15,119 @@
  */
 
 import React from "react";
+import { connect } from "react-redux";
+import * as actionsBuckets from "../buckets/actions";
+import BucketComboBox from "./BucketComboBox";
 
-export const Host = ({ endPoint, bucketName }) => (
-  <div>
-    <div className="fes-host sb-custom">
-      <span className="host-text sb-host-text">{endPoint}</span>
-      <br />
-      <span className="host-text sb-host-text">{bucketName}</span>
-    </div>
-  </div>
-);
+export class Host extends React.Component {
+  constructor(props) {
+    super(props);
 
-export default Host;
+    this.state = {
+      nextBucketName: props.currentBucketName || ""
+    };
+
+    this.handleBucketChange = this.handleBucketChange.bind(this);
+    this.handleBucketSubmit = this.handleBucketSubmit.bind(this);
+  }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.currentBucketName !== this.props.currentBucketName) {
+      this.setState({ nextBucketName: this.props.currentBucketName || "" });
+    }
+  }
+
+  handleBucketChange(event) {
+    this.setState({ nextBucketName: event.target.value });
+  }
+
+  handleBucketSubmit(event) {
+    event.preventDefault();
+    const nextBucketName = this.state.nextBucketName.trim();
+
+    if (!nextBucketName || nextBucketName === this.props.currentBucketName) {
+      return;
+    }
+
+    this.props.switchS3Bucket(nextBucketName);
+  }
+
+  render() {
+    const { endPoint, currentBucketName, s3buckets } = this.props;
+    const bucketOptions = Array.from(
+      new Set([...(s3buckets || []), ...(currentBucketName ? [currentBucketName] : [])])
+    );
+    const controlStyle = {
+      width: "100%",
+      display: "block",
+      boxSizing: "border-box",
+      padding: "6px 8px",
+      borderRadius: "4px",
+      border: "1px solid #555",
+      background: "#333",
+      color: "#fff",
+      fontSize: "12px"
+    };
+
+    return (
+      <div>
+        <div className="fes-host sb-custom">
+          <span className="host-text sb-host-text">{endPoint}</span>
+          <form
+            onSubmit={this.handleBucketSubmit}
+            style={{
+              marginTop: "10px",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              width: "100%",
+              minWidth: 0
+            }}
+          >
+            <BucketComboBox
+              id="sidebarBucketName"
+              name="sidebarBucketName"
+              listId="known-s3-buckets"
+              value={this.state.nextBucketName}
+              onChange={this.handleBucketChange}
+              options={bucketOptions}
+              placeholder="Enter bucket name"
+              title="Current bucket or type another accessible bucket name"
+              autoComplete="off"
+              className="ig-text"
+              style={{
+                ...controlStyle,
+                flex: 1,
+                minWidth: 0
+              }}
+            />
+            <button
+              type="submit"
+              style={{
+                ...controlStyle,
+                width: "auto",
+                flex: "0 0 auto",
+                background: "#444",
+                whiteSpace: "nowrap",
+                cursor: "pointer"
+              }}
+            >
+              Switch bucket
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+}
+
+const mapStateToProps = (state) => ({
+  currentBucketName: state.buckets.bucketName,
+  s3buckets: state.buckets.s3buckets,
+});
+
+const mapDispatchToProps = (dispatch) => ({
+  switchS3Bucket: (bucketName) => dispatch(actionsBuckets.switchS3Bucket(bucketName)),
+});
+
+export default connect(mapStateToProps, mapDispatchToProps)(Host);
