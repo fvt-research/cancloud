@@ -1,0 +1,8 @@
+services:
+  cancloud:
+    build: .
+    container_name: cancloud
+    ports:
+      - "3001:3000"
+    restart: unless-stopped  # automatically restarts on boot
+
