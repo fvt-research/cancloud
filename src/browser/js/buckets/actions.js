@@ -16,6 +16,8 @@
 
 import web from "../web";
 import history from "../history";
+import jwt from "jsonwebtoken";
+import storage from "local-storage-fallback";
 import * as alertActions from "../alert/actions";
 import * as objectsActions from "../objects/actions";
 import * as browserActions from "../browser/actions";
@@ -34,9 +36,10 @@ export const SHOW_MANAGE_DEVICE_EDITOR = "bucket/SHOW_MANAGE_DEVICE_EDITOR";
 export const SET_LOGOUT = "common/SET_LOGOUT";
 export const SET_LIST_META = "buckets/SET_LIST_META";
 export const SET_ENDPOINT_BUCKET_NAME = "buckets/SET_ENDPOINT_BUCKET_NAME";
+export const SET_S3_BUCKETS = "buckets/SET_S3_BUCKETS";
 
 export const fetchBuckets = () => {
-  return function(dispatch) {
+  return function (dispatch) {
     return web.ListBuckets().then(res => {
       const buckets = res.buckets ? res.buckets.map(bucket => bucket.name) : [];
       const { bucket, prefix } = pathSlice(history.location.pathname);
@@ -50,6 +53,7 @@ export const fetchBuckets = () => {
 
       dispatch(getEndpointAndBucket());
       dispatch(setList(buckets));
+      dispatch(fetchS3Buckets());
 
       // load all device.json files & dispatch meta data
       dispatch(dashboardStatusActions.fetchDeviceFileContentAll(devices));
@@ -85,7 +89,7 @@ export const fetchBuckets = () => {
 };
 
 export const addBucketMetaData = () => {
-  return function(dispatch, getState) {
+  return function (dispatch, getState) {
     let devices = getState().buckets.list.filter(bucket =>
       isValidDevice(bucket)
     );
@@ -121,7 +125,7 @@ export const addBucketMetaData = () => {
 };
 
 export const fetchBucketsPostUpload = createdBucket => {
-  return function(dispatch) {
+  return function (dispatch) {
     return web.ListBuckets().then(res => {
       const buckets = res.buckets ? res.buckets.map(bucket => bucket.name) : [];
       dispatch(setList(buckets));
@@ -164,13 +168,13 @@ export const setFilter = filter => {
 };
 
 export const selectBucket = (bucket, prefix) => {
-  return function(dispatch) {
+  return function (dispatch) {
     dispatch(alertActions.clear());
     dispatch(setCurrentBucket(bucket));
     dispatch(objectsActions.selectPrefix(prefix || ""));
     // fetch the device file for the selected bucket for use in meta data
-    if(bucket != "Home"){
-    dispatch(browserActions.fetchDeviceFile(bucket))
+    if (bucket != "Home") {
+      dispatch(browserActions.fetchDeviceFile(bucket))
     }
   };
 };
@@ -183,7 +187,7 @@ export const setCurrentBucket = bucket => {
 };
 
 export const makeBucket = bucket => {
-  return function(dispatch) {
+  return function (dispatch) {
     return web
       .MakeBucket({
         bucketName: bucket
@@ -207,7 +211,7 @@ export const makeBucket = bucket => {
 };
 
 export const deleteBucket = bucket => {
-  return function(dispatch) {
+  return function (dispatch) {
     return web
       .DeleteBucket({
         bucketName: bucket
@@ -254,7 +258,7 @@ export const hideMakeBucketModal = () => ({
 });
 
 export const fetchPolicies = bucket => {
-  return function(dispatch) {
+  return function (dispatch) {
     return web
       .ListAllBucketPolicies({
         bucketName: bucket
@@ -295,7 +299,7 @@ export const userLogout = () => ({
 });
 
 export const getEndpointAndBucket = () => {
-  return function(dispatch) {
+  return function (dispatch) {
     return web
       .getEndpointAndBucketName()
       .then(res => {
@@ -315,5 +319,79 @@ export const setEndpointAndBucket = (bucketName, endPoint) => {
     type: SET_ENDPOINT_BUCKET_NAME,
     endPoint,
     bucketName
+  };
+};
+
+export const setS3Buckets = (s3buckets) => ({
+  type: SET_S3_BUCKETS,
+  s3buckets
+});
+
+export const fetchS3Buckets = () => {
+  return function (dispatch) {
+    const token = storage.getItem("token");
+    const session = token ? jwt.decode(token) : null;
+    const region = storage.getItem("region") || "";
+
+    if (session && session.accessKey && session.secretKey && session.endPoint) {
+      return fetch("/api/list-buckets", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          accessKey: session.accessKey,
+          secretKey: session.secretKey,
+          endPoint: session.endPoint,
+          region
+        })
+      })
+        .then((response) =>
+          response.json().then((payload) => ({ ok: response.ok, payload }))
+        )
+        .then(({ ok, payload }) => {
+          if (!ok) {
+            const message = payload && payload.error ? payload.error : "Bucket fetch proxy failed";
+            throw new Error(message);
+          }
+
+          const s3buckets = payload && payload.buckets ? payload.buckets : [];
+          dispatch(setS3Buckets(s3buckets));
+        })
+        .catch((proxyErr) => {
+          console.log("Could not list S3 buckets via proxy:", proxyErr.message);
+          return web
+            .listS3Buckets()
+            .then(res => {
+              const s3buckets = res.s3buckets ? res.s3buckets.map(b => b.name) : [];
+              dispatch(setS3Buckets(s3buckets));
+            })
+            .catch(err => {
+              dispatch(setS3Buckets([]));
+              console.log("Could not list S3 buckets:", err.message);
+            });
+        });
+    }
+
+    return web
+      .listS3Buckets()
+      .then(res => {
+        const s3buckets = res.s3buckets ? res.s3buckets.map(b => b.name) : [];
+        dispatch(setS3Buckets(s3buckets));
+      })
+      .catch(err => {
+        dispatch(setS3Buckets([]));
+        console.log("Could not list S3 buckets:", err.message);
+      });
+  };
+};
+
+export const switchS3Bucket = (newBucketName) => {
+  return function (dispatch) {
+    return web.switchBucket({ bucketName: newBucketName }).then(() => {
+      dispatch(fetchBuckets());
+    }).catch(err => {
+      dispatch(alertActions.set({ type: "danger", message: `Could not switch to bucket: ${err.message}` }));
+    });
   };
 };

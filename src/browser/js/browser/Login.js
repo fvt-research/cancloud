@@ -21,6 +21,7 @@ import Alert from "../alert/Alert";
 import * as actionsAlert from "../alert/actions";
 import * as actionsBrowser from "./actions";
 import InputGroup from "./InputGroup";
+import BucketComboBox from "./BucketComboBox";
 import web from "../web";
 import { Redirect } from "react-router-dom";
 import history from "../history";
@@ -34,7 +35,7 @@ let news = "";
 try {
   let newsJson = require("../../schema/news.json");
   news = newsJson.news;
-} catch (err) {}
+} catch (err) { }
 
 export class Login extends React.Component {
   constructor(props) {
@@ -52,6 +53,8 @@ export class Login extends React.Component {
           region: "",
           bucketName: "",
           jsonFileName: "",
+          fetchedBuckets: [],
+          isFetchingBuckets: false,
         };
       }
     } else {
@@ -62,6 +65,8 @@ export class Login extends React.Component {
         region: "",
         bucketName: "",
         jsonFileName: "",
+        fetchedBuckets: [],
+        isFetchingBuckets: false,
       };
     }
 
@@ -80,28 +85,28 @@ export class Login extends React.Component {
         if (cfgKeyformat == 0) {
           let cfgEndpoint = cfgServer.endpoint ? cfgServer.endpoint : "";
           let cfgPort = cfgServer.port ? cfgServer.port : "";
-          let cfgAccessKey = cfgServer.accesskey ?  cfgServer.accesskey : "";
+          let cfgAccessKey = cfgServer.accesskey ? cfgServer.accesskey : "";
           let cfgSecretkey = cfgServer.secretkey ? cfgServer.secretkey : "";
           let cfgBucket = cfgServer.bucket ? cfgServer.bucket : "";
           let cfgRegion = cfgServer.region ? cfgServer.region : "";
 
           let endpoint = ""
-          let cfgCloudEndPointTest = cfgEndpoint.substring(cfgEndpoint.length - 3) == "com" ||  cfgEndpoint.substring(cfgEndpoint.length - 3) == "net" || cfgEndpoint.substring(cfgEndpoint.length - 4) == "com/" || cfgEndpoint.substring(cfgEndpoint.length - 4) == "net/"
+          let cfgCloudEndPointTest = cfgEndpoint.substring(cfgEndpoint.length - 3) == "com" || cfgEndpoint.substring(cfgEndpoint.length - 3) == "net" || cfgEndpoint.substring(cfgEndpoint.length - 4) == "com/" || cfgEndpoint.substring(cfgEndpoint.length - 4) == "net/"
 
           if (cfgCloudEndPointTest) {
-             endpoint = cfgEndpoint;
+            endpoint = cfgEndpoint;
           } else {
             // assume MinIO case
-             endpoint = cfgEndpoint + ":" + cfgPort;
+            endpoint = cfgEndpoint + ":" + cfgPort;
           }
 
           try {
             this.setState({
-            accessKey: cfgAccessKey,
-            secretKey: cfgSecretkey,
-            endPoint: endpoint,
-            region: cfgRegion,
-            bucketName: cfgBucket,
+              accessKey: cfgAccessKey,
+              secretKey: cfgSecretkey,
+              endPoint: endpoint,
+              region: cfgRegion,
+              bucketName: cfgBucket,
 
             }, () => {
 
@@ -109,17 +114,17 @@ export class Login extends React.Component {
           } catch (e) {
             this.onFilesError(e);
           }
-        }else{
+        } else {
           this.props.showAlert("info", "The S3 secretKey in the Configuration File appears to be encrypted. The S3 details have therefore not been loaded");
         }
-      }else{
+      } else {
         this.props.showAlert("info", "Unable to identify S3 server details in the Configuration File");
       }
     };
   }
 
   onFileChange(file) {
-    this.setState({ jsonFileName: file[0].name }, () => {});
+    this.setState({ jsonFileName: file[0].name }, () => { });
   }
 
   configureGeneral(e) {
@@ -158,6 +163,167 @@ export class Login extends React.Component {
     });
   }
 
+  fetchBuckets(event) {
+    event.preventDefault();
+    const { showAlert } = this.props;
+    let endPointForFetch = this.state.endPoint;
+    const isMinioServer = endPointForFetch
+      .substring(endPointForFetch.length - 6)
+      .includes(":");
+
+    if (!this.state.accessKey || !this.state.secretKey || !this.state.endPoint) {
+      showAlert(
+        "danger",
+        "Access Key, Secret Key and End Point are required to fetch buckets"
+      );
+      return;
+    }
+
+    if (
+      endPointForFetch.substring(0, 5) == "http:" &&
+      location.protocol == "https:" &&
+      isMinioServer == false
+    ) {
+      endPointForFetch = endPointForFetch.replace("http://", "https://");
+      this.setState({ endPoint: endPointForFetch });
+      showAlert(
+        "info",
+        "Auto-adjusting endpoint prefix from http:// to https:// for bucket fetch"
+      );
+    } else if (
+      endPointForFetch.substring(0, 5) == "http:" &&
+      location.protocol == "https:"
+    ) {
+      showAlert(
+        "danger",
+        "A http:// server cannot be accessed via a https:// browser frontend. Replace https:// with http:// in the CANcloud URL of your browser and hit enter."
+      );
+      return;
+    }
+
+    if (
+      endPointForFetch.substring(0, 5) != "http:" &&
+      endPointForFetch.substring(0, 6) != "https:"
+    ) {
+      showAlert("danger", "Please add http:// or https:// in front of your endpoint");
+      return;
+    }
+
+    this.setState({ isFetchingBuckets: true });
+
+    fetch("/api/list-buckets", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        accessKey: this.state.accessKey,
+        secretKey: this.state.secretKey,
+        endPoint: endPointForFetch,
+        region: this.state.region,
+      })
+    })
+      .then((response) =>
+        response.json().then((payload) => ({ ok: response.ok, payload }))
+      )
+      .then(({ ok, payload }) => {
+        if (!ok) {
+          const message = payload && payload.error ? payload.error : "Bucket fetch proxy failed";
+          throw new Error(message);
+        }
+
+        const fetchedBuckets = payload && payload.buckets ? payload.buckets : [];
+
+        this.setState({
+          fetchedBuckets,
+          isFetchingBuckets: false,
+          bucketName: fetchedBuckets.length === 1 ? fetchedBuckets[0] : "",
+        });
+
+        if (!fetchedBuckets.length) {
+          showAlert("info", "No buckets were returned for these credentials");
+        }
+      })
+      .catch((e) => {
+        // Fallback to existing in-browser path when proxy is unavailable.
+        web
+          .listS3Buckets({
+            accessKey: this.state.accessKey,
+            secretKey: this.state.secretKey,
+            endPoint: endPointForFetch,
+            region: this.state.region,
+            bucketName: this.state.bucketName,
+          })
+          .then((res) => {
+            const fetchedBuckets = res.s3buckets
+              ? res.s3buckets.map((bucket) => bucket.name || bucket)
+              : [];
+
+            this.setState({
+              fetchedBuckets,
+              isFetchingBuckets: false,
+              bucketName: fetchedBuckets.length === 1 ? fetchedBuckets[0] : "",
+            });
+
+            if (!fetchedBuckets.length) {
+              showAlert("info", "No buckets were returned for these credentials");
+            }
+          })
+          .catch((fallbackError) => {
+            this.setState({ isFetchingBuckets: false, fetchedBuckets: [] });
+            const diagnosticContext = {
+              pageProtocol: location.protocol,
+              browser: browser && browser.name ? browser.name : "unknown",
+              endpoint: endPointForFetch,
+              region: this.state.region || "",
+              hasAccessKey: !!this.state.accessKey,
+              hasSecretKey: !!this.state.secretKey,
+              selectedBucket: this.state.bucketName || ""
+            };
+
+            console.log("Fetch buckets diagnostic context:", diagnosticContext);
+            console.log("Fetch buckets proxy error:", e);
+            console.log("Fetch buckets fallback error:", fallbackError);
+
+            const proxyErrorMessage = e && e.message ? e.message : "";
+            const isProxyCertIssue = /unable to get local issuer certificate|self signed certificate|certificate/i.test(
+              proxyErrorMessage
+            );
+
+            if (isProxyCertIssue) {
+              showAlert(
+                "danger",
+                "Could not fetch buckets: proxy TLS certificate trust issue. Configure container CA trust (S3_PROXY_CA_BUNDLE / AWS_CA_BUNDLE / NODE_EXTRA_CA_CERTS) or use S3_PROXY_INSECURE_TLS=true for testing only."
+              );
+              return;
+            }
+
+            const errorMessage =
+              fallbackError && fallbackError.message
+                ? fallbackError.message
+                : e && e.message
+                  ? e.message
+                  : "Unknown error";
+            const isAwsServiceEndpoint = /^https?:\/\/s3\.[a-z0-9-]+\.amazonaws\.com\/?$/i.test(
+              endPointForFetch
+            );
+            const isBrowserNetworkFailure = /Failed to fetch|Network Failure|NetworkingError/i.test(
+              errorMessage
+            );
+
+            if (isAwsServiceEndpoint && isBrowserNetworkFailure) {
+              showAlert(
+                "danger",
+                "Bucket enumeration is blocked in-browser for this AWS service endpoint (network/CORS restriction). Credentials can still work for direct bucket access. Enter bucket name manually or use bucket-specific endpoint/CORS-enabled path. Open F12 for diagnostics."
+              );
+              return;
+            }
+
+            showAlert("danger", `Could not fetch buckets: ${errorMessage}. Open browser console (F12) for diagnostics.`);
+          });
+      });
+  }
+
   handleSubmit(event) {
     event.preventDefault();
     const { showAlert, history } = this.props;
@@ -185,16 +351,16 @@ export class Login extends React.Component {
         "For AWS S3 endpoints we recommend to use the following syntax: http://s3.[region].amazonaws.com (e.g. http://s3.us-east-1.amazonaws.com)";
     }
 
-    
+
     if (
       this.state.endPoint.substring(0, 5) == "http:" &&
-      location.protocol == "https:" && 
+      location.protocol == "https:" &&
       isMinioServer == false
     ) {
       this.props.showAlert("info", "Auto-adjusting endpoint prefix from http:// to https:// to enable login via https:// browser URL")
-      let endPointAdj = this.state.endPoint.replace("http://","https://")
+      let endPointAdj = this.state.endPoint.replace("http://", "https://")
       this.setState({
-      endPoint: endPointAdj,
+        endPoint: endPointAdj,
       }, () => {
 
       });
@@ -218,7 +384,7 @@ export class Login extends React.Component {
 
     if (
       this.state.endPoint.substring(0, 6) != "https:" &&
-      (browser.name == "chrome" || browser.name == "edge") && 
+      (browser.name == "chrome" || browser.name == "edge") &&
       isMinioServer == true
     ) {
       message = "It looks like you are trying to login to a TLS-disabled MinIO S3 server using a Chrome/Edge browser. This is not possible unless you are self-hosting CANcloud on the S3 server network. You can use Firefox instead - or enable TLS on your MinIO S3 server. See the S3 server documentation details.";
@@ -230,7 +396,7 @@ export class Login extends React.Component {
 
     if (message) {
       showAlert("danger", message);
-        // return;
+      // return;
     }
 
     web
@@ -242,7 +408,7 @@ export class Login extends React.Component {
         bucketName: this.state.bucketName,
       })
       .then((res) => {
-        history.push("/");
+        history.push("/status-dashboard/");
         // console.log(res);
       })
       .catch((e) => {
@@ -263,8 +429,12 @@ export class Login extends React.Component {
 
   render() {
     const { clearAlert, alert } = this.props;
+    const canFetchBuckets =
+      this.state.accessKey.trim() !== "" &&
+      this.state.secretKey.trim() !== "" &&
+      this.state.endPoint.trim() !== "";
     if (web.LoggedIn()) {
-      return <Redirect to={"/"} />;
+      return <Redirect to={"/status-dashboard/"} />;
     }
     let alertBox = <Alert {...alert} onDismiss={clearAlert} />;
     // Make sure you don't show a fading out alert box on the initial web-page load.
@@ -326,18 +496,33 @@ export class Login extends React.Component {
               autoComplete="region"
             />
 
-            <InputGroup
-              value={this.state.bucketName}
-              onChange={this.bucketNameChange.bind(this)}
-              className="ig-dark"
-              label="Bucket Name"
-              id="bucketName"
-              name="bucketName"
-              type="text"
-              spellCheck="false"
-              required="required"
-              autoComplete="bucketName"
-            />
+            <div className="login-bucket-row">
+              <div className="input-group ig-dark login-bucket-group">
+                <BucketComboBox
+                  id="bucketName"
+                  name="bucketName"
+                  listId="login-fetched-buckets"
+                  value={this.state.bucketName}
+                  onChange={this.bucketNameChange.bind(this)}
+                  options={this.state.fetchedBuckets}
+                  placeholder=""
+                  title="Type a bucket name or select from fetched buckets"
+                  autoComplete="bucketName"
+                  required
+                  className="ig-text ig-combobox"
+                />
+                <i className="ig-helpers" />
+                <label className="ig-label">Bucket Name</label>
+              </div>
+              <button
+                className="btn btn-dark-gray login-fetch-btn"
+                type="button"
+                onClick={this.fetchBuckets.bind(this)}
+                disabled={this.state.isFetchingBuckets || !canFetchBuckets}
+              >
+                {this.state.isFetchingBuckets ? "Fetching..." : "Fetch buckets"}
+              </button>
+            </div>
 
             <button className="lw-btn" type="submit">
               <i className="fa fa-sign-in" />
@@ -385,7 +570,7 @@ const mapDispatchToProps = (dispatch) => {
     clearAlert: () => dispatch(actionsAlert.clear()),
     login: (accessKey, secretKey, endPoint, region, bucketName) =>
       dispatch(
-        actionsBrowser.login(accessKey, secretKey, endPoint,region, bucketName)
+        actionsBrowser.login(accessKey, secretKey, endPoint, region, bucketName)
       ),
   };
 };

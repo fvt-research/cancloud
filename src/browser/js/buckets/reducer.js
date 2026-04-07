@@ -34,7 +34,8 @@ export default (
     showBucketPolicy: false,
     bucketsMeta: [],
     bucketName: "",
-    endPoint: ""
+    endPoint: "",
+    s3buckets: []
   },
   action
 ) => {
@@ -99,6 +100,11 @@ export default (
         ...state,
         endPoint: action.endPoint,
         bucketName: action.bucketName
+      };
+    case actionsBuckets.SET_S3_BUCKETS:
+      return {
+        ...state,
+        s3buckets: action.s3buckets
       };
     default:
       return state;

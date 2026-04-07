@@ -177,6 +177,17 @@ class Web {
     return this.makeCall("GetEndpointAndBucketName", args);
   }
 
+  listS3Buckets(args) {
+    return this.makeCall("ListS3Buckets", args || {});
+  }
+
+  switchBucket(args) {
+    return this.makeCall("SwitchBucket", args).then(res => {
+      storage.setItem("token", `${res.token}`);
+      return res;
+    });
+  }
+
   getWidgetQueryResult(args) {
     return this.makeCall("GetWidgetQueryResult", args);
   }

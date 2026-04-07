@@ -2,6 +2,16 @@ services:
   cancloud:
     build: .
     container_name: cancloud
+    environment:
+      # Keep strict TLS verification enabled.
+      S3_PROXY_INSECURE_TLS: "false"
+      S3_PROXY_CA_BUNDLE: "/etc/ssl/certs/ca-certificates.crt"
+      # Preferred: provide trusted CA bundle path inside container and set one of:
+      # S3_PROXY_CA_BUNDLE: "/etc/ssl/certs/custom-ca.pem"
+      # AWS_CA_BUNDLE: "/etc/ssl/certs/custom-ca.pem"
+      # NODE_EXTRA_CA_CERTS: "/etc/ssl/certs/custom-ca.pem"
+    volumes:
+      - /etc/ssl/certs:/etc/ssl/certs:ro
     ports:
       - "3001:3000"
     restart: unless-stopped  # automatically restarts on boot

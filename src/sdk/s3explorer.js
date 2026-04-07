@@ -30,6 +30,7 @@ class S3Explorer {
         sessionObj.secretKey,
         region
       );
+      this.region = region;
       this.bucketName = sessionObj.bucketName;
     } else if (options.endPoint) {
       // when the user needs to log in, the region is parsed based on the options provided
@@ -46,7 +47,12 @@ class S3Explorer {
       this.region = options.region
     }
 
-    this.AwsSdk = new AwsSdk(this.accessKey, this.secretKey, this.endPoint);
+    this.AwsSdk = new AwsSdk(
+      this.accessKey,
+      this.secretKey,
+      this.endPoint,
+      this.region
+    );
   }
 
   /**
@@ -58,7 +64,7 @@ class S3Explorer {
   getSessionsObject(cb) {
     var stream = this.s3Client.listObjects(this.bucketName, "", false);
     let objectsArray = [];
-    stream.on("data", function(obj) {
+    stream.on("data", function (obj) {
       if ((obj.name && !obj.name.endsWith("/")) || obj.prefix) {
         obj["name"] = obj.prefix ? obj.prefix : obj.name;
         objectsArray.push(obj);
@@ -70,12 +76,12 @@ class S3Explorer {
       secretKey: this.secretKey,
       bucketName: this.bucketName
     };
-    stream.on("end", function() {
+    stream.on("end", function () {
       var token = jwt.sign(dataObj, SECRET_CODE);
       let response = StorageResponses.makeDefaultResponse("token", token);
       cb(null, response);
     });
-    stream.on("error", function(err) {
+    stream.on("error", function (err) {
       cb(err);
     });
   }
@@ -85,7 +91,7 @@ class S3Explorer {
     marker = marker ? marker : "";
     var stream = this.s3Client.listObjects(this.bucketName, "", marker, false);
     let objectsArray = [];
-    stream.on("data", function(obj) {
+    stream.on("data", function (obj) {
       if (obj.prefix) {
         obj["name"] = obj.prefix.substring(0, obj.prefix.length - 1);
         let loggerRegex = new RegExp(/([0-9A-Fa-f]){8}|(server)\b/g);
@@ -94,14 +100,14 @@ class S3Explorer {
         }
       }
     });
-    stream.on("end", function() {
+    stream.on("end", function () {
       let response = StorageResponses.makeDefaultResponse(
         "buckets",
         objectsArray
       );
       cb(null, response);
     });
-    stream.on("error", function(err) {
+    stream.on("error", function (err) {
       cb(err);
     });
   }
@@ -155,7 +161,7 @@ class S3Explorer {
     }
 
     let objectsArray = [];
-    stream.on("data", function(obj) {
+    stream.on("data", function (obj) {
       if ((obj.name && !obj.name.endsWith("/")) || obj.prefix) {
         obj["name"] = obj.prefix
           ? removeFirstOccurence(obj.prefix, updatedPrefix)
@@ -163,14 +169,14 @@ class S3Explorer {
         objectsArray.push(obj);
       }
     });
-    stream.on("end", function() {
+    stream.on("end", function () {
       let response = StorageResponses.makeDefaultResponse(
         "objects",
         objectsArray
       );
       cb(null, response);
     });
-    stream.on("error", function(err) {
+    stream.on("error", function (err) {
       cb(err);
     });
   }
@@ -202,7 +208,7 @@ class S3Explorer {
     }
 
     let objectsArray = [];
-    stream.on("data", function(obj) {
+    stream.on("data", function (obj) {
       if ((obj.name && !obj.name.endsWith("/")) || obj.prefix) {
         obj["name"] = obj.prefix
           ? removeFirstOccurence(obj.prefix, updatedPrefix)
@@ -210,14 +216,14 @@ class S3Explorer {
         objectsArray.push(obj);
       }
     });
-    stream.on("end", function() {
+    stream.on("end", function () {
       let response = StorageResponses.makeDefaultResponse(
         "objects",
         objectsArray
       );
       cb(null, response);
     });
-    stream.on("error", function(err) {
+    stream.on("error", function (err) {
       cb(err);
     });
   }
@@ -227,10 +233,10 @@ class S3Explorer {
     var stream;
     let objectNameWithPrefix = bucketName + "/" + prefix;
     if ("Home" == bucketName) {
-      if(marker == ""){
+      if (marker == "") {
         // faster if no marker is available
         stream = this.s3Client.listObjectsV2(this.bucketName, prefix, true);
-      } else{
+      } else {
         stream = this.s3Client.listObjects(this.bucketName, prefix, marker, true);
       }
 
@@ -247,30 +253,30 @@ class S3Explorer {
     let iCount = 0;
 
     // look into optimizing this part
-    stream.on("data", function(obj) {
+    stream.on("data", function (obj) {
       if (obj.name || obj.prefix) {
         obj["name"] = obj.prefix ? obj.prefix : obj.name;
         objectsArray.push(obj);
         iCount += 1;
       }
     });
-    stream.on("end", function() {
+    stream.on("end", function () {
       let response = StorageResponses.makeDefaultResponse(
         "objects",
         objectsArray
       );
       cb(null, response);
     });
-    stream.on("error", function(err) {
+    stream.on("error", function (err) {
       cb(err);
     });
   }
 
-  
+
 
   // Make bucket to S3 compatible storage
   makeBucket(bucketName, region, cb) {
-    this.s3Client.makeBucket(bucketName, region, function(err) {
+    this.s3Client.makeBucket(bucketName, region, function (err) {
       if (err) {
         return cb(err);
       }
@@ -284,7 +290,7 @@ class S3Explorer {
 
   // delete bucket from S3 compatible storage
   deleteBucket(bucketName, cb) {
-    this.s3Client.removeBucket(bucketName, function(err) {
+    this.s3Client.removeBucket(bucketName, function (err) {
       if (err) {
         return cb(err);
       }
@@ -310,7 +316,7 @@ class S3Explorer {
       objectNameWithPrefix = bucketName + "/" + objects.toString();
     }
 
-    this.s3Client.removeObject(this.bucketName, objectNameWithPrefix, function(
+    this.s3Client.removeObject(this.bucketName, objectNameWithPrefix, function (
       err
     ) {
       if (err) {
@@ -326,7 +332,7 @@ class S3Explorer {
 
   // List All bucket policies from S3 compatible resources
   listAllBucketPolicies(bucketName, cb) {
-    this.s3Client.getBucketPolicy(bucketName, function(err, policy) {
+    this.s3Client.getBucketPolicy(bucketName, function (err, policy) {
       if (err) {
         return cb(err);
       }
@@ -339,7 +345,7 @@ class S3Explorer {
   putObject(objectName, file, cb) {
     let strm = str(file);
     let fileStream = fileReaderStream(file);
-    this.s3Client.putObject(this.bucketName, objectName, strm, function(
+    this.s3Client.putObject(this.bucketName, objectName, strm, function (
       err,
       etag
     ) {
@@ -357,7 +363,7 @@ class S3Explorer {
     var metaData = {
       "Content-Type": "application/octet-stream"
     };
-    this.s3Client.fPutObject(bucketName, objectName, file, metaData, function(
+    this.s3Client.fPutObject(bucketName, objectName, file, metaData, function (
       err,
       etag
     ) {
@@ -389,7 +395,7 @@ class S3Explorer {
       this.bucketName,
       objectNameWithPrefix,
       expiry,
-      function(err, presignedUrl) {
+      function (err, presignedUrl) {
         if (err) {
           return cb(err);
         }
@@ -417,7 +423,7 @@ class S3Explorer {
       this.bucketName,
       objectNameWithPrefix,
       expiry,
-      function(err, presignedUrl) {
+      function (err, presignedUrl) {
         if (err) {
           return cb(err);
         }
@@ -450,7 +456,7 @@ class S3Explorer {
       this.bucketName,
       objectNameWithPrefix,
       expiry,
-      function(err, presignedUrl) {
+      function (err, presignedUrl) {
         if (err) {
           return cb(err);
         }
@@ -491,7 +497,7 @@ class S3Explorer {
       objectWithPrefix = bucketName + "/" + objectName;
     }
 
-    this.s3Client.headObject(this.bucketName, objectWithPrefix, function(
+    this.s3Client.headObject(this.bucketName, objectWithPrefix, function (
       err,
       stat
     ) {
@@ -510,6 +516,67 @@ class S3Explorer {
     };
     const response = StorageResponses.makeDefaultResponse("savedEndpoint", obj);
     return cb(null, response);
+  }
+
+  listS3Buckets(cb) {
+    this.s3Client.listBuckets((storageErr, buckets) => {
+      if (!storageErr) {
+        let response = StorageResponses.makeDefaultResponse("s3buckets", buckets);
+        cb(null, response);
+        return;
+      }
+
+      this.AwsSdk.listBuckets()
+        .then((awsBuckets) => {
+          let response = StorageResponses.makeDefaultResponse("s3buckets", awsBuckets);
+          cb(null, response);
+        })
+        .catch((awsErr) => {
+          const storageSummary = [
+            storageErr && storageErr.name ? storageErr.name : "unknown",
+            storageErr && storageErr.code ? `[${storageErr.code}]` : "",
+            storageErr && storageErr.message ? storageErr.message : ""
+          ]
+            .join(" ")
+            .trim();
+          const awsSummary = [
+            awsErr && awsErr.name ? awsErr.name : "unknown",
+            awsErr && awsErr.code ? `[${awsErr.code}]` : "",
+            awsErr && awsErr.message ? awsErr.message : ""
+          ]
+            .join(" ")
+            .trim();
+
+          const diagnosticMessage =
+            `Bucket enumeration failed. storageClient=${storageSummary || "n/a"}; ` +
+            `awsSdk=${awsSummary || "n/a"}; endpoint=${this.endPoint || "n/a"}; ` +
+            `region=${this.region || "n/a"}`;
+
+          console.log("listS3Buckets storage client error:", storageErr);
+          console.log("listS3Buckets AWS SDK error:", awsErr);
+          cb(new Error(diagnosticMessage));
+        });
+    });
+  }
+
+  switchBucket(newBucketName, cb) {
+    var self = this;
+    var stream = this.s3Client.listObjects(newBucketName, "", false);
+    stream.on("data", function () { });
+    let dataObj = {
+      endPoint: self.endPoint,
+      accessKey: self.accessKey,
+      secretKey: self.secretKey,
+      bucketName: newBucketName
+    };
+    stream.on("end", function () {
+      var token = jwt.sign(dataObj, SECRET_CODE);
+      let response = StorageResponses.makeDefaultResponse("token", token);
+      cb(null, response);
+    });
+    stream.on("error", function (err) {
+      cb(err);
+    });
   }
 
   /**
@@ -582,7 +649,7 @@ class S3Explorer {
     let type = "bytes"
     let partialContent = ""
 
-    if(type == "bytes"){
+    if (type == "bytes") {
       partialContent = [];
     }
     this.s3Client.getPartialObject(
@@ -591,26 +658,26 @@ class S3Explorer {
       offset,
       byteLength,
       (err, stream) => {
-        
+
         // if (err) {
         //   console.log(err);
         //   return cb(err);
         // }
-        if(type == "bytes"){
+        if (type == "bytes") {
 
-          stream.on("data", function(chunk) {
+          stream.on("data", function (chunk) {
             partialContent.push(chunk)
-            
+
           });
         }
-        else{
-          stream.on("data", function(chunk) {
+        else {
+          stream.on("data", function (chunk) {
             partialContent += chunk.toString();
-            
+
           });
         }
-        stream.on("end", function() {
-          if(type == "bytes" && partialContent.length == 2){
+        stream.on("end", function () {
+          if (type == "bytes" && partialContent.length == 2) {
             partialContent = [Uint8ClampedArray.from(partialContent.reduce((a, b) => [...a, ...b], []))]
           }
 
@@ -620,7 +687,7 @@ class S3Explorer {
           );
           return cb(null, response);
         });
-        stream.on("error", function(err) {
+        stream.on("error", function (err) {
           console.log(err);
           return cb(err);
         });
@@ -683,6 +750,14 @@ S3Explorer.prototype.getObjectStat = promisify(
 
 S3Explorer.prototype.getEndpointAndBucketName = promisify(
   S3Explorer.prototype.getEndpointAndBucketName
+);
+
+S3Explorer.prototype.listS3Buckets = promisify(
+  S3Explorer.prototype.listS3Buckets
+);
+
+S3Explorer.prototype.switchBucket = promisify(
+  S3Explorer.prototype.switchBucket
 );
 
 S3Explorer.prototype.getWidgetQueryResult = promisify(

@@ -133,6 +133,12 @@ export default class JSONrpc {
       case "GetEndpointAndBucketName":
         result = s3Explorer.getEndpointAndBucketName();
         break;
+      case "ListS3Buckets":
+        result = s3Explorer.listS3Buckets();
+        break;
+      case "SwitchBucket":
+        result = s3Explorer.switchBucket(options.params.bucketName);
+        break;
       case "GetWidgetQueryResult":
         result = s3Explorer.getWidgetQueryResult(
           options.params.dataFileName,
