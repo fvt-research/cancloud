@@ -17,7 +17,6 @@
 import React from "react";
 import { connect } from "react-redux";
 import * as actionsBuckets from "../buckets/actions";
-import BucketComboBox from "./BucketComboBox";
 
 export class Host extends React.Component {
   constructor(props) {
@@ -34,6 +33,12 @@ export class Host extends React.Component {
   componentDidUpdate(prevProps) {
     if (prevProps.currentBucketName !== this.props.currentBucketName) {
       this.setState({ nextBucketName: this.props.currentBucketName || "" });
+    }
+  }
+
+  componentDidMount() {
+    if (!this.state.nextBucketName && this.props.currentBucketName) {
+      this.setState({ nextBucketName: this.props.currentBucketName });
     }
   }
 
@@ -55,8 +60,11 @@ export class Host extends React.Component {
   render() {
     const { endPoint, currentBucketName, s3buckets } = this.props;
     const bucketOptions = Array.from(
-      new Set([...(s3buckets || []), ...(currentBucketName ? [currentBucketName] : [])])
-    );
+      new Set([
+        ...(s3buckets || []),
+        ...(currentBucketName ? [currentBucketName] : [])
+      ])
+    ).filter(Boolean);
     const controlStyle = {
       width: "100%",
       display: "block",
@@ -73,10 +81,24 @@ export class Host extends React.Component {
       <div>
         <div className="fes-host sb-custom">
           <span className="host-text sb-host-text">{endPoint}</span>
+          <div
+            style={{
+              marginTop: "10px",
+              width: "100%",
+              boxSizing: "border-box",
+              fontSize: "11px",
+              color: "#aaa",
+              marginBottom: "4px"
+            }}
+          >
+            Current bucket:{" "}
+            <strong style={{ color: "#fff" }}>
+              {currentBucketName || "—"}
+            </strong>
+          </div>
           <form
             onSubmit={this.handleBucketSubmit}
             style={{
-              marginTop: "10px",
               display: "flex",
               alignItems: "center",
               gap: "8px",
@@ -84,23 +106,27 @@ export class Host extends React.Component {
               minWidth: 0
             }}
           >
-            <BucketComboBox
+            <select
               id="sidebarBucketName"
               name="sidebarBucketName"
-              listId="known-s3-buckets"
               value={this.state.nextBucketName}
               onChange={this.handleBucketChange}
-              options={bucketOptions}
-              placeholder="Enter bucket name"
-              title="Current bucket or type another accessible bucket name"
-              autoComplete="off"
-              className="ig-text"
               style={{
                 ...controlStyle,
                 flex: 1,
-                minWidth: 0
+                minWidth: 0,
+                cursor: "pointer"
               }}
-            />
+            >
+              {bucketOptions.length === 0 && (
+                <option value="">No buckets available</option>
+              )}
+              {bucketOptions.map((bucket) => (
+                <option key={bucket} value={bucket}>
+                  {bucket}
+                </option>
+              ))}
+            </select>
             <button
               type="submit"
               style={{
