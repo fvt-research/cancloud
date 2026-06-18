@@ -20,7 +20,7 @@ import humanize from "humanize";
 import * as actionsCommon from "./actions";
 
 export class StorageInfo extends React.Component {
-  componentWillMount() {
+  UNSAFE_componentWillMount() {
     const { fetchStorageInfo } = this.props;
     fetchStorageInfo();
   }

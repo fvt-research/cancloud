@@ -60,12 +60,12 @@ export const schemaAry = [
 export const demoMode = false 
 
 class Editor extends React.Component {
-  componentWillMount() {
+  UNSAFE_componentWillMount() {
     const { bucket, prefix } = pathSlice(history.location.pathname);
     this.props.fetchFilesS3(prefix);
   }
 
-  componentWillReceiveProps(nextProps) {
+  UNSAFE_componentWillReceiveProps(nextProps) {
     if( this.props.currentBucket != "" && this.props.currentBucket != nextProps.currentBucket ){
       const { bucket, prefix } = pathSlice(history.location.pathname);
 

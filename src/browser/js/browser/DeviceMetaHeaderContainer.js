@@ -24,7 +24,7 @@ export class DeviceMetaHeaderContainer extends Component {
     history.push("/status-dashboard/");
   }
 
-  componentWillReceiveProps(nextProps) {
+  UNSAFE_componentWillReceiveProps(nextProps) {
     const { bucket, prefix } = pathSlice(history.location.pathname);
 
     if (this.props.currentBucket != nextProps.currentBucket) {
@@ -49,7 +49,7 @@ export class DeviceMetaHeaderContainer extends Component {
     }
   }
 
-  componentWillMount() {
+  UNSAFE_componentWillMount() {
     const { bucket } = pathSlice(history.location.pathname);
     this.props.clearDataFiles();
     this.props.listLogFiles([bucket]);

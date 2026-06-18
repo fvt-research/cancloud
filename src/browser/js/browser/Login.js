@@ -434,7 +434,7 @@ export class Login extends React.Component {
       });
   }
 
-  componentWillMount() {
+  UNSAFE_componentWillMount() {
     const { clearAlert } = this.props;
     // Clear out any stale message in the alert of previous page
     clearAlert();

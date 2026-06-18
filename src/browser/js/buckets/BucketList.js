@@ -25,7 +25,7 @@ import history from "../history";
 import { pathSlice } from "../utils";
 
 export class BucketList extends React.Component {
-  componentWillMount() {
+  UNSAFE_componentWillMount() {
     const { fetchBuckets, setBucketList, selectBucket } = this.props;
     if (web.LoggedIn()) {
       fetchBuckets();
