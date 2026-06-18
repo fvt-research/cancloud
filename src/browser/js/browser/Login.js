@@ -526,9 +526,9 @@ export class Login extends React.Component {
                     className="ig-text ig-combobox"
                     style={{ background: "#2d3339", color: "#fff" }}
                   >
-                    <option value="">— select bucket —</option>
+                    <option value="" style={{ background: "#2d3339", color: "#fff" }}>— select bucket —</option>
                     {this.state.fetchedBuckets.map((b) => (
-                      <option key={b} value={b}>{b}</option>
+                      <option key={b} value={b} style={{ background: "#2d3339", color: "#fff" }}>{b}</option>
                     ))}
                   </select>
                 ) : (
