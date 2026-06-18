@@ -17,6 +17,7 @@
 import React from "react";
 import Path from "../objects/Path";
 import BrowserDropdown from "./BrowserDropdown";
+import AutoRefreshBar from "./AutoRefreshBar";
 import web from "../web";
 import history from "../history";
 
@@ -37,7 +38,12 @@ class Header extends React.Component {
             {loggedIn && <Path />}
             <ul className="feh-actions float-top">
               {loggedIn ? (
-                <BrowserDropdown />
+                <React.Fragment>
+                  <li style={{ display: "flex", alignItems: "center", marginRight: "8px" }}>
+                    <AutoRefreshBar />
+                  </li>
+                  <BrowserDropdown />
+                </React.Fragment>
               ) : (
                 <a
                   className="btn btn-danger btn-login"
