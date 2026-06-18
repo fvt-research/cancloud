@@ -37,6 +37,10 @@ export const SideBar = ({
   bucketName,
 }) => {
   const { bucket, prefix } = pathSlice(history.location.pathname);
+  const goToDashboard = (e) => {
+    e.preventDefault();
+    history.push("/status-dashboard/");
+  };
 
   return (
     <ClickOutHandler onClickOut={clickOutside}>
@@ -48,7 +52,13 @@ export const SideBar = ({
         })}
       >
         <div className="fes-header clearfix hidden-sm hidden-xs">
-        <img src={logo} style={{ width: "65%", maxHeight: "70px" }} />
+        <img
+          src={logo}
+          style={{ width: "65%", maxHeight: "70px", cursor: "pointer" }}
+          onClick={goToDashboard}
+          title="Go to dashboard"
+          alt="CANcloud"
+        />
 
 
           <div className="version-text sb-custom-version">

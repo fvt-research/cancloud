@@ -19,6 +19,10 @@ import {
 } from "./prepareDataDevices";
 import DeviceTable from "./DeviceTable";
 import PeriodMenu from "./PeriodMenu";
+import {
+  setDashboardAutoRefreshHandlers,
+  clearDashboardAutoRefreshHandlers,
+} from "./autoRefresh";
 
 const resWide = window.innerWidth > 2000 ? 2 : window.innerWidth > 1800 ? 1 : 0;
 const statusConfig = require(`../../schema/status-config-03.01.json`);
@@ -55,6 +59,13 @@ class DashboardStatusSection extends React.Component {
     };
   }
 
+  componentDidMount() {
+    setDashboardAutoRefreshHandlers({
+      refreshDevices: this.updateDevicesDevices.bind(this),
+      refreshFiles: this.updateDevicesFiles.bind(this),
+    });
+  }
+
   handleChange(event) {
     if (event.target.value == 24 * 30) {
       this.props.clearDataFiles();
@@ -85,17 +96,21 @@ class DashboardStatusSection extends React.Component {
 
   updateDevicesDevices(e) {
     this.setState({}, () => {
+      const selectedDevices = this.state.devicesDevicesInput.length
+        ? this.state.devicesDevicesInput.map(e => e.value)
+        : undefined;
       this.props.clearDataDevices();
-      this.props.listAllObjects(
-        this.state.devicesDevicesInput.map(e => e.value)
-      );
+      this.props.listAllObjects(selectedDevices, { loadLogFiles: false });
     });
   }
 
   updateDevicesFiles(e) {
     this.setState({}, () => {
+      const selectedFiles = this.state.devicesFilesInput.length
+        ? this.state.devicesFilesInput.map(e => e.value)
+        : undefined;
       this.props.clearDataFiles();
-      this.props.listLogFiles(this.state.devicesFilesInput.map(e => e.value));
+      this.props.listLogFiles(selectedFiles);
     });
   }
 
@@ -120,6 +135,7 @@ class DashboardStatusSection extends React.Component {
   }
 
   componentWillUnmount() {
+    clearDashboardAutoRefreshHandlers();
     this.props.clearDataDevices();
     this.props.clearDataFiles();
     this.props.setPeriodStartBack(7);

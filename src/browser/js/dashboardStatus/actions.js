@@ -40,9 +40,10 @@ let lastHour = new Date();
 lastHour.setTime(lastHour.getTime() - 1 * 60 * 60 * 1000);
 
 // list objects for devices (device.json and config-XX.YY.json)
-export const listAllObjects = devicesDevicesInput => {
+export const listAllObjects = (devicesDevicesInput, options = {}) => {
   return function(dispatch, getState) {
     let deviceFileObjectsAry = [];
+    const loadLogFiles = options.loadLogFiles !== false;
 
     return web.ListBuckets().then(res => {
       let devices = res.buckets ? res.buckets.map(bucket => bucket.name) : [];
@@ -88,7 +89,7 @@ export const listAllObjects = devicesDevicesInput => {
                 dispatch(setDeviceFileObjects(deviceFileObjectsAry));
                 dispatch(fetchDeviceFileContentAll(deviceFileObjectsAry));
                 dispatch(loadedDevice(true));
-                dispatch(listConfigFiles(deviceFileObjectsAry, devicesDevicesInput));
+                dispatch(listConfigFiles(deviceFileObjectsAry, devicesDevicesInput, loadLogFiles));
               }
             })
             .catch(err => {
@@ -104,7 +105,7 @@ export const listAllObjects = devicesDevicesInput => {
                 dispatch(setDeviceFileObjects(deviceFileObjectsAry));
                 dispatch(fetchDeviceFileContentAll(deviceFileObjectsAry));
                 dispatch(loadedDevice(true));
-                dispatch(listConfigFiles(deviceFileObjectsAry, devicesDevicesInput));
+                dispatch(listConfigFiles(deviceFileObjectsAry, devicesDevicesInput, loadLogFiles));
               }
             });
         });
@@ -112,13 +113,13 @@ export const listAllObjects = devicesDevicesInput => {
         !getState().dashboardStatus.loadedConfig ||
         !getState().dashboardStatus.loadedFiles
       ) {
-        dispatch(listConfigFiles(deviceFileObjectsAry, devicesDevicesInput));
+        dispatch(listConfigFiles(deviceFileObjectsAry, devicesDevicesInput, loadLogFiles));
       }
     });
   };
 };
 
-export const listConfigFiles = (deviceFileObjectsAry, devicesDevicesInput) => {
+export const listConfigFiles = (deviceFileObjectsAry, devicesDevicesInput, loadLogFiles = true) => {
 
   return function(dispatch, getState) {
     let configObjectsUnique = []
@@ -135,7 +136,7 @@ export const listConfigFiles = (deviceFileObjectsAry, devicesDevicesInput) => {
     // note: Once the device specific info is loaded, initiate the load of the log file specific data
     // this is done as a default operation only for the case where no devicesDevicesInput is parsed
     // i.e. when the user opens the status dashboard from the menu or clicking "update" with no selection
-    if (devicesDevicesInput == undefined) {
+    if (loadLogFiles && devicesDevicesInput == undefined) {
       dispatch(listLogFiles());
     }
   }
