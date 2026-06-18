@@ -19,6 +19,7 @@ import classNames from "classnames";
 import { connect } from "react-redux";
 import logo from "../../img/logo.png";
 import * as actionsCommon from "./actions";
+import history from "../history";
 
 export const MobileHeader = ({ sidebarOpen, toggleSidebar }) => (
   <header className="fe-header-mobile hidden-lg hidden-md mobile-header-custom">
@@ -41,7 +42,17 @@ export const MobileHeader = ({ sidebarOpen, toggleSidebar }) => (
         <div className="bottom" />
       </div>
     </div>
-    <img className="mh-logo" src={logo} alt="" />
+    <img
+      className="mh-logo"
+      src={logo}
+      alt="CANcloud"
+      title="Go to dashboard"
+      style={{ cursor: "pointer" }}
+      onClick={e => {
+        e.preventDefault();
+        history.push("/status-dashboard/");
+      }}
+    />
   </header>
 );
 
