@@ -36,10 +36,10 @@ class Header extends React.Component {
       <header className="fe-header top-header">
           <div>
             {loggedIn && <Path />}
-            <ul className="feh-actions float-top">
+            <ul className="feh-actions float-top" style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "nowrap" }}>
               {loggedIn ? (
                 <React.Fragment>
-                  <li style={{ display: "flex", alignItems: "center", marginRight: "8px" }}>
+                  <li style={{ display: "flex", alignItems: "center", marginRight: "8px", whiteSpace: "nowrap" }}>
                     <AutoRefreshBar />
                   </li>
                   <BrowserDropdown />

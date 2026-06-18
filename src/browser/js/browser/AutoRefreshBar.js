@@ -2,7 +2,9 @@ import React from "react";
 import { connect } from "react-redux";
 import history from "../history";
 import * as objectsActions from "../objects/actions";
-import * as dashboardStatusActions from "../dashboardStatus/actions";
+import {
+  getDashboardAutoRefreshHandlers,
+} from "../dashboardStatus/autoRefresh";
 
 const INTERVALS = [
   { label: "Off", value: 0 },
@@ -83,15 +85,15 @@ class AutoRefreshBar extends React.Component {
 
   render() {
     const { interval, remaining } = this.state;
-    const progress = interval > 0 ? remaining / interval : 0;
-    const dashoffset = CIRCUMFERENCE * (1 - progress);
+    const dashoffset = interval > 0 ? CIRCUMFERENCE * (remaining / interval) : CIRCUMFERENCE;
 
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "4px 8px", borderRadius: "16px", background: "rgba(0,0,0,0.26)", border: "1px solid rgba(255,255,255,0.12)" }}>
         <button
           onClick={this.onManualRefresh.bind(this)}
           title="Refresh now"
           style={btnStyle}
+          aria-label="Refresh now"
         >
           ↻
         </button>
@@ -130,8 +132,9 @@ class AutoRefreshBar extends React.Component {
         <select
           value={interval}
           onChange={this.onIntervalChange.bind(this)}
-          style={selectStyle}
+          style={{ ...selectStyle, width: "58px" }}
           title="Auto-refresh interval"
+          aria-label="Auto-refresh interval"
         >
           {INTERVALS.map(({ label, value }) => (
             <option key={value} value={value}>{label}</option>
@@ -146,10 +149,13 @@ const mapDispatchToProps = (dispatch) => ({
   onRefresh() {
     const path = history.location.pathname;
     if (path.startsWith("/status-dashboard")) {
-      // ponytail: clear then re-fetch; listAllObjects chains into listLogFiles automatically
-      dispatch(dashboardStatusActions.clearDataDevices());
-      dispatch(dashboardStatusActions.clearDataFiles());
-      dispatch(dashboardStatusActions.listAllObjects());
+      const handlers = getDashboardAutoRefreshHandlers();
+      if (handlers.refreshDevices) {
+        handlers.refreshDevices();
+      }
+      if (handlers.refreshFiles) {
+        handlers.refreshFiles();
+      }
     } else {
       dispatch(objectsActions.fetchObjects());
     }
