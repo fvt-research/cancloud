@@ -545,7 +545,7 @@ export class Login extends React.Component {
                   />
                 )}
                 <i className="ig-helpers" />
-                <label className="ig-label">Bucket Name</label>
+                <label className="ig-label" style={this.state.fetchedBuckets.length > 0 ? { bottom: "35px", fontSize: "13px" } : undefined}>Bucket Name</label>
               </div>
               <button
                 className="btn btn-dark-gray login-fetch-btn"
