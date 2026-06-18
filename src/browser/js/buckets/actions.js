@@ -389,6 +389,8 @@ export const fetchS3Buckets = () => {
 export const switchS3Bucket = (newBucketName) => {
   return function (dispatch) {
     return web.switchBucket({ bucketName: newBucketName }).then(() => {
+      dispatch(dashboardStatusActions.clearDataDevices());
+      dispatch(dashboardStatusActions.clearDataFiles());
       dispatch(fetchBuckets());
     }).catch(err => {
       dispatch(alertActions.set({ type: "danger", message: `Could not switch to bucket: ${err.message}` }));
