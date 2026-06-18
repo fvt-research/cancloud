@@ -21,7 +21,6 @@ import Alert from "../alert/Alert";
 import * as actionsAlert from "../alert/actions";
 import * as actionsBrowser from "./actions";
 import InputGroup from "./InputGroup";
-import BucketComboBox from "./BucketComboBox";
 import web from "../web";
 import { Redirect } from "react-router-dom";
 import history from "../history";
@@ -229,7 +228,10 @@ export class Login extends React.Component {
       .then(({ ok, payload }) => {
         if (!ok) {
           const message = payload && payload.error ? payload.error : "Bucket fetch proxy failed";
-          throw new Error(message);
+          // ponytail: tag proxy errors so we don't fall through to misleading CORS message
+          const err = new Error(message);
+          err.fromProxy = true;
+          throw err;
         }
 
         const fetchedBuckets = payload && payload.buckets ? payload.buckets : [];
@@ -245,7 +247,23 @@ export class Login extends React.Component {
         }
       })
       .catch((e) => {
-        // Fallback to existing in-browser path when proxy is unavailable.
+        // If the proxy gave a real server-side error (e.g. AccessDenied), skip the
+        // in-browser fallback — it won't help and would show a misleading CORS message.
+        if (e && e.fromProxy) {
+          this.setState({ isFetchingBuckets: false, fetchedBuckets: [] });
+          const isAccessDenied = /AccessDenied|access denied|not authorized/i.test(e.message);
+          if (isAccessDenied) {
+            showAlert(
+              "info",
+              "Credentials lack s3:ListAllMyBuckets permission — enter bucket name directly below."
+            );
+          } else {
+            showAlert("danger", `Bucket fetch failed: ${e.message}`);
+          }
+          return;
+        }
+
+        // Proxy unreachable — try in-browser as last resort
         web
           .listS3Buckets({
             accessKey: this.state.accessKey,
@@ -416,7 +434,7 @@ export class Login extends React.Component {
       });
   }
 
-  componentWillMount() {
+  UNSAFE_componentWillMount() {
     const { clearAlert } = this.props;
     // Clear out any stale message in the alert of previous page
     clearAlert();
@@ -496,23 +514,39 @@ export class Login extends React.Component {
               autoComplete="region"
             />
 
-            <div className="login-bucket-row">
+              <div className="login-bucket-row">
               <div className="input-group ig-dark login-bucket-group">
-                <BucketComboBox
-                  id="bucketName"
-                  name="bucketName"
-                  listId="login-fetched-buckets"
-                  value={this.state.bucketName}
-                  onChange={this.bucketNameChange.bind(this)}
-                  options={this.state.fetchedBuckets}
-                  placeholder=""
-                  title="Type a bucket name or select from fetched buckets"
-                  autoComplete="bucketName"
-                  required
-                  className="ig-text ig-combobox"
-                />
+                {this.state.fetchedBuckets.length > 0 ? (
+                  <select
+                    id="bucketName"
+                    name="bucketName"
+                    value={this.state.bucketName}
+                    onChange={this.bucketNameChange.bind(this)}
+                    required
+                    className="ig-text ig-combobox"
+                    style={{ background: "#2d3339", color: "#fff" }}
+                  >
+                    <option value="" style={{ background: "#2d3339", color: "#fff" }}>— select bucket —</option>
+                    {this.state.fetchedBuckets.map((b) => (
+                      <option key={b} value={b} style={{ background: "#2d3339", color: "#fff" }}>{b}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    id="bucketName"
+                    name="bucketName"
+                    type="text"
+                    value={this.state.bucketName}
+                    onChange={this.bucketNameChange.bind(this)}
+                    placeholder=""
+                    title="Type a bucket name or fetch buckets to select"
+                    autoComplete="bucketName"
+                    required
+                    className="ig-text"
+                  />
+                )}
                 <i className="ig-helpers" />
-                <label className="ig-label">Bucket Name</label>
+                <label className="ig-label" style={this.state.fetchedBuckets.length > 0 ? { bottom: "35px", fontSize: "13px" } : undefined}>Bucket Name</label>
               </div>
               <button
                 className="btn btn-dark-gray login-fetch-btn"

@@ -38,7 +38,7 @@ export class ChangePasswordModal extends React.Component {
     };
   }
   // When its shown, it loads the access key and secret key.
-  componentWillMount() {
+  UNSAFE_componentWillMount() {
     const { serverInfo } = this.props;
 
     // Check environment variables first.

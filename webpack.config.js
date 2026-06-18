@@ -28,6 +28,18 @@ const definePlugin = new webpack.DefinePlugin({
   EDITOR: JSON.stringify({ offline: false })
 });
 
+// Redirect optional schema files to committed stubs when the real files are absent.
+const optionalSchemaFallback = (file, stub) =>
+  new webpack.NormalModuleReplacementPlugin(
+    new RegExp(file.replace(".", "\\.") + "$"),
+    (resource) => {
+      const real = path.resolve(__dirname, "src/browser/schema", file);
+      if (!require("fs").existsSync(real)) {
+        resource.request = resource.request.replace(file, stub);
+      }
+    }
+  );
+
 const copyPlugin = new CopyWebpackPlugin([
   { from: "src/browser/customize-css/customize.css", to: "customize-css" }
 ]);
@@ -104,9 +116,18 @@ module.exports = {
   node: {
     fs: "empty"
   },
-  plugins: [htmlPlugin, copyPlugin, definePlugin],
+  plugins: [
+    htmlPlugin,
+    copyPlugin,
+    definePlugin,
+    optionalSchemaFallback("news.json", "news.default.json"),
+    optionalSchemaFallback("demo-credentials.json", "demo-credentials.default.json"),
+  ],
   devServer: {
     historyApiFallback: true,
-    contentBase: "./"
+    contentBase: "./",
+    proxy: {
+      "/api": "http://localhost:3000"
+    }
   }
 };

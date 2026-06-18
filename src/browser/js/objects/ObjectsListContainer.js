@@ -48,7 +48,7 @@ export class ObjectsListContainer extends React.Component {
     this.props.fetchSessionObjectsMetaList(bucket, prefix, objectsList);
   }
 
-  componentWillReceiveProps(nextProps) {
+  UNSAFE_componentWillReceiveProps(nextProps) {
     const { bucket, prefix } = pathSlice(history.location.pathname);
 
     // reset page and sessionMetaList
