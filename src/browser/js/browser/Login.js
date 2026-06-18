@@ -524,6 +524,7 @@ export class Login extends React.Component {
                     onChange={this.bucketNameChange.bind(this)}
                     required
                     className="ig-text ig-combobox"
+                    style={{ background: "#2d3339", color: "#fff" }}
                   >
                     <option value="">— select bucket —</option>
                     {this.state.fetchedBuckets.map((b) => (
