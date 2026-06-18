@@ -107,6 +107,9 @@ module.exports = {
   plugins: [htmlPlugin, copyPlugin, definePlugin],
   devServer: {
     historyApiFallback: true,
-    contentBase: "./"
+    contentBase: "./",
+    proxy: {
+      "/api": "http://localhost:3000"
+    }
   }
 };
