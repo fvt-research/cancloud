@@ -16,6 +16,21 @@
 
 import * as actionsObjects from "./actions";
 
+// merge incoming meta entries into the list by key, so partial updates for the same
+// prefix/name (e.g. count/size first, start time later) update the existing entry
+const mergeByKey = (list, incoming, key) => {
+  let merged = [...list];
+  incoming.forEach((entry) => {
+    const idx = merged.findIndex((existing) => existing[key] === entry[key]);
+    if (idx == -1) {
+      merged.push(entry);
+    } else {
+      merged[idx] = { ...merged[idx], ...entry };
+    }
+  });
+  return merged;
+};
+
 const removeObject = (list, objectToRemove, lookup) => {
   const idx = list.findIndex((object) => lookup(object) === objectToRemove);
   if (idx == -1) {
@@ -69,8 +84,6 @@ export default (
     showAbortModal: false,
     checkedList: [],
     sessionMetaList: [],
-    sessionStartTimeList: [],
-    sessionObjectsMetaList: [],
     objectsS3MetaStart: [],
   },
   action
@@ -167,37 +180,17 @@ export default (
     case actionsObjects.ADD_SESSION_META_LIST:
       return {
         ...state,
-        sessionMetaList: state.sessionMetaList.concat(action.sessionMetaList),
-      };
-    case actionsObjects.ADD_SESSION_START_TIME_LIST:
-      return {
-        ...state,
-        sessionStartTimeList: state.sessionStartTimeList.concat(action.sessionStartTimeList),
+        sessionMetaList: mergeByKey(state.sessionMetaList, action.sessionMetaList, "prefix"),
       };
     case actionsObjects.RESET_SESSION_META_LIST:
       return {
         ...state,
         sessionMetaList: [],
       };
-    case actionsObjects.RESET_SESSION_START_TIME_LIST:
-      return {
-        ...state,
-        sessionStartTimeList: [],
-      };
-    case actionsObjects.ADD_SESSION_OBJECTS_META_LIST:
-      return {
-        ...state,
-        sessionObjectsMetaList: state.sessionObjectsMetaList.concat(action.sessionObjectsMetaList),
-      };
     case actionsObjects.ADD_OBJECTS_S3_META_START:
       return {
         ...state,
-        objectsS3MetaStart: state.objectsS3MetaStart.concat(action.objectsS3MetaStart),
-      };
-    case actionsObjects.RESET_SESSION_OBJECTS_META_LIST:
-      return {
-        ...state,
-        sessionObjectsMetaList: [],
+        objectsS3MetaStart: mergeByKey(state.objectsS3MetaStart, action.objectsS3MetaStart, "name"),
       };
     case actionsObjects.RESET_OBJECTS_S3_META_START:
       return {

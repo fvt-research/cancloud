@@ -22,145 +22,118 @@ import ObjectsList from "./ObjectsList";
 import CorsError from "./corsError";
 import history from "../history";
 import { pathSlice } from "../utils";
+import { metaRequestQueue } from "../requestQueue";
+
+// number of rows rendered per page by the infinite scroller
+const PAGE_SIZE = 50;
+// fetch meta data slightly beyond the rendered rows so scrolling rarely waits
+const META_LOOKAHEAD = 20;
 
 export class ObjectsListContainer extends React.Component {
   constructor(props) {
     super(props);
     this.state = {
       page: 1,
-      timeoutId: null,
-      pageCounterList: []
     };
+    // names already passed to a meta fetch action (reset on navigation)
+    this.requestedMeta = new Set();
     this.loadNextPage = this.loadNextPage.bind(this);
-    this.loadSessionsMeta = this.loadSessionsMeta.bind(this);
-    this.loadObjectsMeta = this.loadObjectsMeta.bind(this);
-    this.loadMetaDataBasedOnScroll = this.loadMetaDataBasedOnScroll.bind(this);
-    window.addEventListener('scroll', this.loadMetaDataBasedOnScroll, true);
   }
 
-  loadSessionsMeta(propsInput, bucket, prefix, pageCounter) {
-    let prefixList = propsInput.objects.slice((pageCounter - 1) * 20, pageCounter * 20).filter((object) => object.name.endsWith("/"));
-    this.props.fetchSessionMetaList(bucket, prefixList);
-  }
+  // fetch meta data for rendered rows (plus lookahead) that have none requested yet
+  loadVisibleMetaData(props, page) {
+    const { bucket, prefix } = pathSlice(history.location.pathname);
+    if (bucket == "" || bucket == "Home" || !props.objects || props.objects.length == 0) {
+      return;
+    }
 
-  loadObjectsMeta(propsInput, bucket, prefix, pageCounter) {
-    let objectsList = propsInput.objects.slice((pageCounter - 1) * 20, pageCounter * 20);
-    this.props.fetchSessionObjectsMetaList(bucket, prefix, objectsList);
+    const windowObjects = props.objects.slice(0, page * PAGE_SIZE + META_LOOKAHEAD);
+
+    if (prefix == "") {
+      // device root: session folder meta data
+      const newPrefixes = windowObjects.filter(
+        (object) => object.name.endsWith("/") && !this.requestedMeta.has(object.name)
+      );
+      if (newPrefixes.length > 0) {
+        newPrefixes.forEach((object) => this.requestedMeta.add(object.name));
+        this.props.fetchSessionMetaList(bucket, newPrefixes);
+      }
+    } else {
+      // inside a session folder: per object meta data
+      const newObjects = windowObjects.filter(
+        (object) => !object.name.endsWith("/") && !this.requestedMeta.has(object.name)
+      );
+      if (newObjects.length > 0) {
+        newObjects.forEach((object) => this.requestedMeta.add(object.name));
+        this.props.fetchSessionObjectsMetaList(bucket, prefix, newObjects);
+      }
+    }
   }
 
   componentWillReceiveProps(nextProps) {
-    const { bucket, prefix } = pathSlice(history.location.pathname);
+    const { bucket } = pathSlice(history.location.pathname);
+    let page = this.state.page;
 
-    // reset page and sessionMetaList
+    // reset page and meta data on navigation
     if (this.props.currentBucket != nextProps.currentBucket || bucket == "Home" || this.props.currentPrefix != nextProps.currentPrefix) {
       this.props.resetSessionMetaList();
-      this.props.resetSessionStartTimeList();
-
-      this.props.resetSessionObjectsMetaList();
-      this.setState((state) => {
-        return {
-          page: 1,
-        };
+      this.props.resetObjectsS3MetaStart();
+      this.requestedMeta.clear();
+      metaRequestQueue.clear();
+      page = 1;
+      this.setState({
+        page: 1,
       });
     }
 
-    // load sessionMetaList when in root device folder
-    if (this.props.objects != nextProps.objects && nextProps.objects.length && prefix == "" && bucket != "") {
-      this.loadSessionsMeta(nextProps, bucket, prefix, 1);
-    }
-
-    // load sessionObjectsMetaList when inside session folder
-    if (this.props.objects != nextProps.objects && nextProps.objects.length != 0 && prefix != "") {
-      this.loadObjectsMeta(nextProps, bucket, prefix, 1);
+    // load meta data for the rendered rows when the object list changes
+    if (this.props.objects != nextProps.objects && nextProps.objects.length) {
+      this.loadVisibleMetaData(nextProps, page);
     }
   }
 
   componentWillUnmount() {
-    window.removeEventListener('scroll', this.loadMetaDataBasedOnScroll, true);
-    // reset page and sessionMetaList
     this.props.resetSessionMetaList();
-    this.props.resetSessionStartTimeList();
-
-    this.props.resetSessionObjectsMetaList();
     this.props.resetObjectsS3MetaStart();
-
-    if (this.state.timeoutId) {
-      clearTimeout(this.state.timeoutId);
-    }
-
-    this.setState((state) => {
-      return {
-        page: 1,
-        pageCounterList: [],
-        timeoutId: null
-      };
-    });
+    this.requestedMeta.clear();
+    metaRequestQueue.clear();
   }
 
   loadNextPage() {
-    this.setState((state) => {
-      return {
-        page: state.page + 1
-      };
-    });
-  }
-
-  loadMetaDataBasedOnScroll() {
-
-    if (this.state.timeoutId) {
-      clearTimeout(this.state.timeoutId);
-    }
-    this.setState({
-      timeoutId: setTimeout(() => {
-
-        // define pageCounter based
-        let pageCounter = Math.ceil((document.documentElement.scrollTop) / 1040)
-
-        // load next batch of sessionMetaList when in root device folder and user has scrolled to next page
-        if (this.state.pageCounterList && this.state.pageCounterList.includes(pageCounter) == false) {
-          const { bucket, prefix } = pathSlice(history.location.pathname);
-          if (prefix == "" && bucket != "") {
-            this.loadSessionsMeta(this.props, bucket, prefix, pageCounter);
-          }
-          if (prefix != "") {
-            this.loadObjectsMeta(this.props, bucket, prefix, pageCounter);
-          }
-          this.setState((prevState) => {
-            return {
-              pageCounterList: [...prevState.pageCounterList, pageCounter],
-            };
-          });
-        }
-
-      }, 500)
-    })
-
-
-
+    this.setState(
+      (state) => {
+        return {
+          page: state.page + 1,
+        };
+      },
+      () => {
+        this.loadVisibleMetaData(this.props, this.state.page);
+      }
+    );
   }
 
   render() {
     const {
-      objects,
+      objects = [],
       isTruncated,
       currentBucket,
       loadObjects,
       err,
       sessionMetaList,
-      sessionStartTimeList,
-      sessionObjectsMetaList,
       objectsS3MetaStart,
     } = this.props;
 
-    // Load file objects separately to ensure they are always included at the top when existing
-    let fileObjects = objects.filter((object) => !object.name.endsWith("/"))
-    let visibleObjects = objects.slice(0, this.state.page * 50);
+    const { prefix } = pathSlice(history.location.pathname);
+    let visibleObjects = objects.slice(0, this.state.page * PAGE_SIZE);
 
-    visibleObjects = Array.from(new Set(fileObjects.concat(visibleObjects) ));
+    if (prefix == "") {
+      // Load file objects separately to ensure they are always included at the top when existing
+      let fileObjects = objects.filter((object) => !object.name.endsWith("/"))
+      visibleObjects = Array.from(new Set(fileObjects.concat(visibleObjects) ));
+    }
     return (
       <div
         className="feb-container"
-        onScroll={this.loadSessionDataBasedOnScroll}
         style={{
           position: "relative",
         }}
@@ -191,8 +164,6 @@ export class ObjectsListContainer extends React.Component {
             <ObjectsList
               objects={visibleObjects}
               sessionMetaList={sessionMetaList}
-              sessionStartTimeList={sessionStartTimeList}
-              sessionObjectsMetaList={sessionObjectsMetaList}
               objectsS3MetaStart={objectsS3MetaStart}
             />
           ) : null}{" "}
@@ -220,8 +191,6 @@ const mapStateToProps = (state) => {
     err: state.objects.err,
     isTruncated: state.objects.isTruncated,
     sessionMetaList: state.objects.sessionMetaList,
-    sessionStartTimeList: state.objects.sessionStartTimeList,
-    sessionObjectsMetaList: state.objects.sessionObjectsMetaList,
     objectsS3MetaStart: state.objects.objectsS3MetaStart,
   };
 };
@@ -229,11 +198,9 @@ const mapStateToProps = (state) => {
 const mapDispatchToProps = (dispatch) => {
   return {
     loadObjects: (append) => dispatch(actionsObjects.fetchObjects(append)),
-    fetchSessionMetaList: (bucket, prefix) => dispatch(actionsObjects.fetchSessionMetaList(bucket, prefix)),
+    fetchSessionMetaList: (bucket, prefixList) => dispatch(actionsObjects.fetchSessionMetaList(bucket, prefixList)),
     fetchSessionObjectsMetaList: (bucket, prefix, objectsList) => dispatch(actionsObjects.fetchSessionObjectsMetaList(bucket, prefix, objectsList)),
     resetSessionMetaList: () => dispatch(actionsObjects.resetSessionMetaList()),
-    resetSessionStartTimeList: () => dispatch(actionsObjects.resetSessionStartTimeList()),
-    resetSessionObjectsMetaList: () => dispatch(actionsObjects.resetSessionObjectsMetaList()),
     resetObjectsS3MetaStart: () => dispatch(actionsObjects.resetObjectsS3MetaStart()),
   };
 };

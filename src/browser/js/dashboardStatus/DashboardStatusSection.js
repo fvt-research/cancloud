@@ -219,7 +219,7 @@ class DashboardStatusSection extends React.Component {
               <p className="field-description field-description-shift">
                 The log file specific dashboard widgets (e.g. size metrics) are
                 based on this list of devices. By default, data for all devices
-                will be loaded when the server has 3 or fewer devices connected.
+                will be loaded when the server has 10 or fewer devices connected.
                 If more devices are connected, the log file specific metrics are
                 not shown by default.
               </p>

@@ -29,8 +29,8 @@ import {
   removeFirstOccurence,
   pathSlice,
   isValidLogfile,
-  get_first_timestamp,
 } from "../utils";
+import { metaRequestQueue } from "../requestQueue";
 import { getCurrentBucket } from "../buckets/selectors";
 import { getCurrentPrefix, getCheckedList } from "./selectors";
 import * as alertActions from "../alert/actions";
@@ -61,13 +61,9 @@ export const UPDATE_PROGRESS = "objects/UPDATE_PROGRESS";
 export const STOP = "objects/STOP";
 export const SHOW_ABORT_MODAL = "objects/SHOW_ABORT_MODAL";
 export const ADD_SESSION_META_LIST = "objects/ADD_SESSION_META_LIST";
-export const ADD_SESSION_START_TIME_LIST = "objects/ADD_SESSION_START_TIME_LIST";
 export const RESET_SESSION_META_LIST = "objects/RESET_SESSION_META_LIST";
-export const RESET_SESSION_START_TIME_LIST = "objects/RESET_SESSION_START_TIME_LIST";
 export const ADD_OBJECTS_S3_META_START = "objects/ADD_OBJECTS_S3_META_START";
 export const RESET_OBJECTS_S3_META_START = "objects/RESET_OBJECTS_S3_META_START";
-export const ADD_SESSION_OBJECTS_META_LIST = "objects/ADD_SESSION_OBJECTS_META_LIST";
-export const RESET_SESSION_OBJECTS_META_LIST = "objects/RESET_SESSION_OBJECTS_META_LIST";
 
 let source;
 
@@ -301,170 +297,172 @@ export const setPrefixWritable = (prefixWritable) => ({
   prefixWritable,
 });
 
-// get meta data for a list of session folders
+// shared error handler for metadata requests; 'cancelled' rejections come from
+// clearing the request queue on navigation and are not errors
+const handleMetaError = (dispatch, err) => {
+  if (err && err.message == "cancelled") {
+    return;
+  }
+  if (web.LoggedIn()) {
+    dispatch(
+      alertActions.set({
+        type: "danger",
+        message: err.message,
+        autoClear: true,
+      })
+    );
+  } else {
+    history.push("/login");
+  }
+};
+
+// get meta data for a list of session folders (device root view).
+// S3 'folders' are simulated, so a single marker-based recursive listing spans many
+// session folders in key order - one range LIST covers the whole contiguous batch and
+// provides per-session count/size/lastModified. Only the 'start time' (custom S3 meta
+// field, timestamp) requires HEAD requests: two per session (first/last log file),
+// run through a concurrency-limited queue and dispatched per session as they resolve
 export const fetchSessionMetaList = (bucket, prefixList) => {
   return function (dispatch, getState) {
-    let sessionMetaList = [];
-    let sessionStartTimeRange = [];
+    const sessionPrefixes = prefixList.map((prefix) => prefix.name).filter((name) => name.endsWith("/"));
+    if (sessionPrefixes.length == 0) {
+      return;
+    }
 
-    prefixList.map((prefix) => {
+    const stillInView = () => {
+      const { bucket: currentBucket, prefix: currentPrefix } = pathSlice(history.location.pathname);
+      return currentBucket == bucket && currentPrefix == "";
+    };
+
+    // session folders are lexicographically contiguous; scan from the smallest one
+    const sortedPrefixes = [...sessionPrefixes].sort();
+    const startMarker = sortedPrefixes[0];
+    const endPrefix = sortedPrefixes[sortedPrefixes.length - 1];
+    const prefixSet = new Set(sortedPrefixes);
+
+    let objectsBySession = {};
+    sortedPrefixes.forEach((name) => (objectsBySession[name] = []));
+
+    // fetch the session 'start time' range via the custom S3 meta data timestamp of
+    // the first/last log file (the only session data a listing cannot provide)
+    const fetchSessionStartTime = (sessionPrefix, logObjects) => {
+      const objectsFirstLast =
+        logObjects.length > 1 ? [logObjects[0], logObjects[logObjects.length - 1]] : logObjects.slice(0, 1);
+
+      Promise.all(
+        objectsFirstLast.map((object) =>
+          metaRequestQueue.add(() =>
+            web.getObjectStat({
+              bucketName: bucket,
+              objectName: object.name.split("/").slice(1).join("/"),
+            })
+          )
+        )
+      )
+        .then((results) => {
+          if (!stillInView()) {
+            return;
+          }
+          let start = results[0] && results[0].metaInfo && results[0].metaInfo.metaData && results[0].metaInfo.metaData.timestamp;
+          let end = results[1] && results[1].metaInfo && results[1].metaInfo.metaData && results[1].metaInfo.metaData.timestamp;
+
+          let start_string = start && start.includes("Z") ? "YYYYMMDDTHHmmssZ" : "YYYYMMDDTHHmmss";
+          let end_string = end && end.includes("Z") ? "YYYYMMDDTHHmmssZ" : "YYYYMMDDTHHmmss";
+
+          let timestampStart = start ? Moment.utc(start, start_string, true).local() : null;
+          let timestampEnd = results.length == 1 ? null : end ? Moment.utc(end, end_string, true).local() : null;
+
+          let lastModifiedS3Meta =
+            timestampStart != null
+              ? timestampStart.format("YY-MM-DD HH:mm") + (timestampEnd != null ? " - " + timestampEnd.format("YY-MM-DD HH:mm") : "")
+              : null;
+
+          dispatch(addSessionMetaList([{ prefix: sessionPrefix, lastModifiedS3Meta: lastModifiedS3Meta }]));
+        })
+        .catch((err) => handleMetaError(dispatch, err));
+    };
+
+    // dispatch count/size/lastModified for each session completed by the listing and
+    // queue its start time HEADs - in prefixList (rendered) order so top rows fill first
+    let processedSessions = new Set();
+    const processCompletedSessions = (completedBefore) => {
+      sessionPrefixes
+        .filter(
+          (name) => !processedSessions.has(name) && (completedBefore == null || name < completedBefore)
+        )
+        .forEach((name) => {
+          processedSessions.add(name);
+
+          const logObjects = objectsBySession[name].filter((object) => isValidLogfile(object.name));
+          let totalSize = 0;
+          logObjects.forEach((object) => {
+            totalSize += object.size;
+          });
+
+          const objectFirst = logObjects[0];
+          const objectLast = logObjects.length > 1 ? logObjects[logObjects.length - 1] : null;
+
+          // the S3 upload times (aka Last Modified S3) come directly from the listing
+          let lastModifiedS3Range = objectFirst
+            ? Moment(objectFirst.lastModified).format("YY-MM-DD HH:mm") +
+              (objectLast != null ? " - " + Moment(objectLast.lastModified).format("YY-MM-DD HH:mm") : "")
+            : null;
+
+          dispatch(
+            addSessionMetaList([
+              {
+                prefix: name,
+                lastModifiedS3: lastModifiedS3Range,
+                lastModifiedS3Meta: null,
+                totalSize: humanize.filesize(totalSize),
+                totalCount: logObjects.length,
+              },
+            ])
+          );
+
+          if (logObjects.length > 0) {
+            fetchSessionStartTime(name, logObjects);
+          }
+        });
+    };
+
+    const listPage = (marker) => {
       return web
-        .ListObjectsRecursive({
+        .ListObjectsRecursivePage({
           bucketName: bucket,
-          prefix: prefix.name,
-          marker: "",
+          prefix: "",
+          marker: marker,
+          maxKeys: 1000,
         })
         .then((res) => {
-          let objects = [];
-          let objectsLogfiles = [];
-          let objectsFirstLast = [];
-          let sessionMetaAry = [];
-
-          if (res.objects) {
-            // filter to only include log files
-            objectsLogfiles = res.objects.filter((object) => isValidLogfile(object.name));
-            objects = objectsLogfiles.map((object) => {
-              return object.name;
-            });
+          if (!stillInView()) {
+            return;
           }
+          let pastEnd = false;
+          (res.objects || []).forEach((object) => {
+            // object names are full keys: <device>/<session>/<file>
+            const parts = object.name.split("/");
+            const relativeName = parts.slice(1).join("/");
+            const sessionPrefix = parts.length > 2 ? parts[1] + "/" : null;
 
-          // get summary data across objects based on standard meta data (count, size range, lastModified range)
-          let tmp;
-          let totalSize = 0;
-          let totalCount = 0;
-          for (var i = objectsLogfiles.length - 1; i >= 0; i--) {
-            tmp = objectsLogfiles[i].size;
-            totalSize += tmp;
-            totalCount += 1;
-          }
-
-          totalSize = humanize.filesize(totalSize);
-
-          // get start timestamp for first (and last object, if there are more than one)
-          if (objects.length > 1) {
-            objectsFirstLast = [objects[0], objects[objects.length - 1]];
-          } else {
-            objectsFirstLast = [objects[0]];
-          }
-
-          let sessionObjectsStartTime = [];
-          let objectCounter = 0;
-
-          objectsFirstLast.map((object, index) => {
-            // get partial content from each object for use in extracting 'start time' from MF4 files
-            // web
-            //   .GetPartialObject({
-            //     bucketName: bucket,
-            //     objectName: prefix.name + object.split("/")[2],
-            //     offset: 0,
-            //     byteLength: 15000,
-            //   })
-            //   .then((objContent) => {
-            //     objectCounter += 1;
-            //     let metaData = objContent.objContent[0];
-
-            //     let metaDate = get_first_timestamp(metaData);
-            //     let lastModifiedSD = metaDate ? (metaDate != -1 ? Moment.unix(metaDate).format("YY-MM-DD HH:mm") : null) : null;
-
-            //     sessionObjectsStartTime.push({
-            //       name: object.split("/")[2],
-            //       lastModifiedSD: lastModifiedSD,
-            //     });
-
-            //     // Once we have loaded partial content for the 0-2 log files, sort them and add range to sessionStartTimeRange
-            //     if (objectCounter == objectsFirstLast.length) {
-            //       sessionObjectsStartTime.sort((a, b) => (a.name > b.name ? 1 : -1));
-
-            //       let lastModifiedSDStart = sessionObjectsStartTime[0].lastModifiedSD ? sessionObjectsStartTime[0].lastModifiedSD : null;
-            //       let lastModifiedSDEnd = sessionObjectsStartTime.length == 1 ? null : sessionObjectsStartTime[1].lastModifiedSD;
-            //       let lastModifiedSDRange =
-            //         lastModifiedSDStart != null ? lastModifiedSDStart + (lastModifiedSDEnd != null ? " - " + lastModifiedSDEnd : "") : null;
-
-            //       sessionStartTimeRange.push({
-            //         prefix: prefix.name,
-            //         lastModifiedSD: lastModifiedSDRange,
-            //       });
-
-            //       // Once we have completed sessionStartTimeRange, load the S3 meta data next for each prefix
-            //       if (sessionStartTimeRange.length == prefixList.length) {
-            //         dispatch(addSessionStartTimeList(sessionStartTimeRange));
-            //       }
-            //     }
-            //   });
-
-            // Get S3 meta data for the first/last objects
-            web
-              .getObjectStat({
-                bucketName: bucket,
-                objectName: prefix.name + object.split("/")[2],
-              })
-              .then((res) => {
-                sessionMetaAry.push({
-                  object: object,
-                  meta: res.metaInfo,
-                });
-
-                if (sessionMetaAry.length == objectsFirstLast.length) {
-                  sessionMetaAry.sort((a, b) => (a.object > b.object ? 1 : -1));
-
-                  // get the log file 'start times' based off the S3 custom meta data field, timestamp
-                  let start =
-                    sessionMetaAry[0] && sessionMetaAry[0].meta && sessionMetaAry[0].meta.metaData && sessionMetaAry[0].meta.metaData.timestamp;
-
-                  let end =
-                    sessionMetaAry[1] && sessionMetaAry[1].meta && sessionMetaAry[1].meta.metaData && sessionMetaAry[1].meta.metaData.timestamp;
-
-                  let start_string = start && start.includes("Z") ? "YYYYMMDDTHHmmssZ" : "YYYYMMDDTHHmmss";
-                  let end_string = end && end.includes("Z") ? "YYYYMMDDTHHmmssZ" : "YYYYMMDDTHHmmss";
-
-                  let timestampStart = start ? Moment.utc(start, start_string, true).local() : null;
-
-                  let timestampEnd = sessionMetaAry.length == 1 ? null : end ? Moment.utc(end, end_string, true).local() : null;
-
-                  let lastModifiedS3Meta =
-                    timestampStart != null
-                      ? timestampStart.format("YY-MM-DD HH:mm") + (timestampEnd != null ? " - " + timestampEnd.format("YY-MM-DD HH:mm") : "")
-                      : null;
-
-                  // get the S3 upload times (aka Last Modified S3)
-                  let lastModifiedS3Start = Moment(sessionMetaAry[0].meta.lastModified);
-                  let lastModifiedS3End = sessionMetaAry.length == 1 ? null : Moment(sessionMetaAry[1].meta.lastModified);
-                  let lastModifiedS3Range =
-                    lastModifiedS3Start != null
-                      ? lastModifiedS3Start.format("YY-MM-DD HH:mm") +
-                        (lastModifiedS3End != null ? " - " + lastModifiedS3End.format("YY-MM-DD HH:mm") : "")
-                      : null;
-
-                  sessionMetaList.push({
-                    prefix: prefix.name,
-                    lastModifiedSD: "",
-                    lastModifiedS3: lastModifiedS3Range,
-                    lastModifiedS3Meta: lastModifiedS3Meta,
-                    totalSize: totalSize,
-                    totalCount: totalCount,
-                  });
-
-                  if (sessionMetaList.length == prefixList.length) {
-                    dispatch(addSessionMetaList(sessionMetaList));
-                  }
-                }
-              })
-              .catch((err) => {
-                if (web.LoggedIn()) {
-                  dispatch(
-                    alertActions.set({
-                      type: "danger",
-                      message: err.message,
-                      autoClear: true,
-                    })
-                  );
-                } else {
-                  history.push("/login");
-                }
-              });
+            if (sessionPrefix && prefixSet.has(sessionPrefix)) {
+              objectsBySession[sessionPrefix].push(object);
+            } else if (!relativeName.startsWith(endPrefix) && relativeName > endPrefix) {
+              // keys are sorted, so the batch is fully covered from here on
+              pastEnd = true;
+            }
           });
+
+          if (res.isTruncated && !pastEnd) {
+            // sessions strictly before the next marker's session are complete
+            processCompletedSessions(res.nextMarker.split("/")[0] + "/");
+            return listPage(res.nextMarker);
+          }
+          processCompletedSessions(null);
         });
-    });
+    };
+
+    listPage(startMarker).catch((err) => handleMetaError(dispatch, err));
   };
 };
 
@@ -473,92 +471,40 @@ export const addSessionMetaList = (sessionMetaList) => ({
   sessionMetaList,
 });
 
-export const addSessionStartTimeList = (sessionStartTimeList) => ({
-  type: ADD_SESSION_START_TIME_LIST,
-  sessionStartTimeList,
-});
-
 export const resetSessionMetaList = () => ({
   type: RESET_SESSION_META_LIST,
 });
 
-export const resetSessionStartTimeList = () => ({
-  type: RESET_SESSION_START_TIME_LIST,
-});
-
-// get meta data for select objects in a session folder
+// get the start time of each object in a session folder via the custom S3 meta data
+// timestamp (one HEAD per object, queued), dispatched per object as results arrive.
+// Size and upload time come from the regular folder listing and need no requests here
 export const fetchSessionObjectsMetaList = (bucket, prefix, objectsList) => {
   return function (dispatch, getState) {
-    let sessionObjectsMetaList = [];
-    let objectsS3MetaStart = [];
+    const stillInView = () => {
+      const { bucket: currentBucket, prefix: currentPrefix } = pathSlice(history.location.pathname);
+      return currentBucket == bucket && currentPrefix == prefix;
+    };
 
-    objectsList.map((object) => {
-      // For each object, get the start time via partial object (if possible)
-      web
-        .GetPartialObject({
-          bucketName: bucket,
-          objectName: prefix + object.name,
-          offset: 0,
-          byteLength: 15000,
-        })
-        .then((objContent) => {
-          let metaData = objContent.objContent[0];
-
-          let metaDate = get_first_timestamp(metaData);
-          let lastModifiedSD = metaDate ? (metaDate != -1 ? Moment.unix(metaDate).format("YY-MM-DD HH:mm") : null) : null;
-
-          sessionObjectsMetaList.push({
-            name: object.name,
-            lastModifiedSD: lastModifiedSD,
-          });
-
-          if (sessionObjectsMetaList.length == objectsList.length) {
-            dispatch(addSessionObjectsMetaList(sessionObjectsMetaList));
-          }
-        })
-        .catch((err) => {
-          dispatch(
-            alertActions.set({
-              type: "danger",
-              message: err.message,
-            })
-          );
-        });
-
-      // For each object, get the custom S3 meta timestamp (aka start time):
-      web
-        .getObjectStat({
-          bucketName: bucket,
-          objectName: prefix + object.name,
-        })
+    objectsList.forEach((object) => {
+      metaRequestQueue
+        .add(() =>
+          web.getObjectStat({
+            bucketName: bucket,
+            objectName: prefix + object.name,
+          })
+        )
         .then((res) => {
+          if (!stillInView()) {
+            return;
+          }
           let start = res.metaInfo && res.metaInfo.metaData && res.metaInfo.metaData.timestamp;
           let start_string = start && start.includes("Z") ? "YYYYMMDDTHHmmssZ" : "YYYYMMDDTHHmmss";
 
           let timestampStart = start ? Moment.utc(start, start_string, true).local().format("YY-MM-DD HH:mm") : null;
 
-          objectsS3MetaStart.push({
-            name: object.name,
-            s3MetaStart: timestampStart,
-          });
-
-          if (objectsS3MetaStart.length == objectsList.length) {
-            dispatch(addObjectsS3MetaStart(objectsS3MetaStart));
-          }
+          dispatch(addObjectsS3MetaStart([{ name: object.name, s3MetaStart: timestampStart }]));
         })
-        .catch((err) => {
-          if (web.LoggedIn()) {
-            dispatch(
-              alertActions.set({
-                type: "danger",
-                message: err.message,
-                autoClear: true,
-              })
-            );
-          } else {
-            history.push("/login");
-          }
-        });
+        .catch((err) => handleMetaError(dispatch, err));
     });
   };
 };
@@ -566,15 +512,6 @@ export const fetchSessionObjectsMetaList = (bucket, prefix, objectsList) => {
 export const addObjectsS3MetaStart = (objectsS3MetaStart) => ({
   type: ADD_OBJECTS_S3_META_START,
   objectsS3MetaStart,
-});
-
-export const addSessionObjectsMetaList = (sessionObjectsMetaList) => ({
-  type: ADD_SESSION_OBJECTS_META_LIST,
-  sessionObjectsMetaList,
-});
-
-export const resetSessionObjectsMetaList = () => ({
-  type: RESET_SESSION_OBJECTS_META_LIST,
 });
 
 export const resetObjectsS3MetaStart = () => ({

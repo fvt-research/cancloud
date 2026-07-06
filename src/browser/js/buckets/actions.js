@@ -51,11 +51,13 @@ export const fetchBuckets = () => {
       dispatch(getEndpointAndBucket());
       dispatch(setList(buckets));
 
-      // load all device.json files & dispatch meta data
-      dispatch(dashboardStatusActions.fetchDeviceFileContentAll(devices));
-
+      // load all device.json files & dispatch meta data. On the status dashboard
+      // route, listAllObjects already fetches all device.json files (and dispatches
+      // the sidebar meta data), so skip the duplicate fetch there
       if (bucket == "status-dashboard") {
         dispatch(dashboardStatusActions.listAllObjects());
+      } else {
+        dispatch(dashboardStatusActions.fetchDeviceFileContentAll(devices));
       }
 
       if (buckets.length > 0) {

@@ -110,6 +110,10 @@ class Web {
     return this.makeCall("ListObjectsRecursive", args);
   }
 
+  ListObjectsRecursivePage(args) {
+    return this.makeCall("ListObjectsRecursivePage", args);
+  }
+
   PresignedGet(args) {
     return this.makeCall("PresignedGet", args);
   }

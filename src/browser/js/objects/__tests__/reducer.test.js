@@ -35,7 +35,13 @@ describe("objects reducer", () => {
         object: "",
         url: ""
       },
-      checkedList: []
+      previewObject: {
+        show: false,
+        content: ""
+      },
+      checkedList: [],
+      sessionMetaList: [],
+      objectsS3MetaStart: []
     })
   })
 

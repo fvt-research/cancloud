@@ -266,7 +266,36 @@ class S3Explorer {
     });
   }
 
-  
+  // list a single page (max 1000 keys) of objects recursively, returning
+  // isTruncated/nextMarker so the caller controls pagination and can stop early.
+  // prefix, marker and the returned nextMarker are all relative to bucketName;
+  // returned object names are full keys (as in listObjectsRecursive)
+  listObjectsRecursivePage(bucketName, prefix, marker, maxKeys, cb) {
+    let bucketPrefix = "Home" == bucketName ? "" : bucketName + "/";
+    let updatedPrefix = bucketPrefix + prefix;
+    let updatedMarker = marker ? bucketPrefix + marker : "";
+    maxKeys = maxKeys ? maxKeys : 1000;
+
+    this.s3Client
+      .listObjectsQuery(this.bucketName, updatedPrefix, updatedMarker, "", maxKeys)
+      .on("data", function(result) {
+        let objectsArray = result.objects.filter((obj) => obj.name);
+        let response = StorageResponses.makeDefaultResponse(
+          "objects",
+          objectsArray
+        );
+        response.result.isTruncated = result.isTruncated;
+        response.result.nextMarker = result.isTruncated
+          ? removeFirstOccurence(result.nextMarker, bucketPrefix)
+          : "";
+        cb(null, response);
+      })
+      .on("error", function(err) {
+        cb(err);
+      });
+  }
+
+
 
   // Make bucket to S3 compatible storage
   makeBucket(bucketName, region, cb) {
@@ -641,6 +670,9 @@ S3Explorer.prototype.listPublicBucketObject = promisify(
 );
 S3Explorer.prototype.listObjectsRecursive = promisify(
   S3Explorer.prototype.listObjectsRecursive
+);
+S3Explorer.prototype.listObjectsRecursivePage = promisify(
+  S3Explorer.prototype.listObjectsRecursivePage
 );
 S3Explorer.prototype.storageInfo = promisify(S3Explorer.prototype.storageInfo);
 S3Explorer.prototype.makeBucket = promisify(S3Explorer.prototype.makeBucket);

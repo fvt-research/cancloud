@@ -72,6 +72,14 @@ export default class JSONrpc {
           options.params.marker
         );
         break;
+      case "ListObjectsRecursivePage":
+        result = s3Explorer.listObjectsRecursivePage(
+          options.params.bucketName,
+          options.params.prefix,
+          options.params.marker,
+          options.params.maxKeys
+        );
+        break;
       case "MakeBucket":
         result = s3Explorer.makeBucket(options.params.bucketName, "us-east-1");
         break;
