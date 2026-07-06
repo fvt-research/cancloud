@@ -9,3 +9,7 @@ site
 .eslintrc.json
 
 simple/*
+
+*TEMP/*
+
+.claude*

@@ -34,6 +34,18 @@ let news = "";
 try {
   let newsJson = require("../../schema/news.json");
   news = newsJson.news;
+  news = (
+    <span>
+     New: {" "}
+      <a
+        href="https://www.csselectronics.com/pages/can-bus-hardware-products#can-interfaces"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        CANsub - 2-4 x CAN FD interface (USB/Ethernet)
+      </a>
+    </span>
+  );
 } catch (err) {}
 
 export class Login extends React.Component {
