@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 import axios from "axios";
-import JSZip from "jszip";
-import saveAs from "file-saver";
 import _ from "lodash";
 import Moment from "moment";
 import humanize from "humanize";
@@ -31,6 +29,7 @@ import {
   isValidLogfile,
 } from "../utils";
 import { metaRequestQueue } from "../requestQueue";
+import { startZipDownload, abortZipDownload } from "./zipDownload";
 import { getCurrentBucket } from "../buckets/selectors";
 import { getCurrentPrefix, getCheckedList } from "./selectors";
 import * as alertActions from "../alert/actions";
@@ -827,115 +826,34 @@ export const downloadCheckedObjects = () => {
         return `${req.prefix}${object}`;
       });
 
-      Promise.all(objectsPromises).then(function (result) {
-        let objectsToDownload = [];
-        _.forEach(result, (objValue) => {
-          if (typeof objValue == "object") {
-            let directoryObjcets = _.map(objValue.objects, (obj) => ({
-              name: removeFirstOccurence(obj.name, req.bucketName + "/"),
-            }));
-            objectsToDownload = [...objectsToDownload, ...directoryObjcets];
-          } else {
-            objectsToDownload.push({
-              name: objValue,
-            });
-          }
-        });
-        downloadObjectAsZip(dispatch, objectsToDownload, req.bucketName, req.prefix);
-      });
-    }
-  };
-};
-
-// TODO: if server isCountable false for axios response i.e total size of the file
-const downloadObjectAsZip = (dispatch, object, bucketName, prefix) => {
-  let zip = new JSZip();
-  let count = 0;
-  const CancelToken = axios.CancelToken;
-  source = CancelToken.source();
-  const objectsUrlPromises = _.map(object, (result) =>
-    web.PresignedGetObj({
-      bucket: bucketName,
-      object: `${result.name}`,
-      expiry: 24 * 60 * 60,
-    })
-  );
-  const objectsStatPromises = _.map(object, (result) =>
-    web.getObjectStat({
-      bucketName: bucketName,
-      objectName: `${result.name}`,
-    })
-  );
-  Promise.all(objectsStatPromises).then((objStat) => {
-    let totalQueueSize = _.reduce(
-      objStat,
-      (totaSize, obj) => {
-        return totaSize + obj.metaInfo.size;
-      },
-      0
-    );
-
-    if (totalQueueSize > 150000000) {
-      dispatch(
-        alertActions.set({
-          type: "info",
-          message: `Your download is large (${Math.round(
-            totalQueueSize / 1000000
-          )} MB). This may cause a browser time-out. Consider splitting up your download`,
-          autoClear: true,
-        })
-      );
-    } else {
-      dispatch(alertActions.clear());
-    }
-    Promise.all(objectsUrlPromises).then((response) => {
-      response.forEach((resObj, index) => {
-        const result = resObj.obj;
-        const slug = `${result.objectName}`;
-        index
-          ? dispatch(alertModalActions.AddQueue(DOWNLOAD, slug, 0, slug))
-          : dispatch(alertModalActions.AddQueue(DOWNLOAD, slug, totalQueueSize, slug));
-        axios({
-          url: result.url,
-          method: "GET",
-          responseType: "blob",
-          cancelToken: source.token,
-          onDownloadProgress: function (progressEvent) {
-            dispatch(alertModalActions.updateQueue(slug, progressEvent.loaded));
-          },
-        })
-          .then((response) => {
-            count++;
-            if (response.data.size) {
-              const fileName =
-                bucketName == "Home" ? result.objectName.replace(/\//g, "_") : `${bucketName}_${result.objectName.replace(/\//g, "_")}`;
-              zip.file(fileName, response.data, {
-                binary: true,
+      Promise.all(objectsPromises)
+        .then(function (result) {
+          let objectsToDownload = [];
+          _.forEach(result, (objValue) => {
+            if (typeof objValue == "object") {
+              let directoryObjcets = _.map(objValue.objects, (obj) => ({
+                name: removeFirstOccurence(obj.name, req.bucketName + "/"),
+                size: obj.size,
+              }));
+              objectsToDownload = [...objectsToDownload, ...directoryObjcets];
+            } else {
+              objectsToDownload.push({
+                name: objValue,
               });
             }
-            if (count == object.length) {
-              dispatch(alertModalActions.stopQueue(slug));
-              zip
-                .generateAsync({
-                  type: "blob",
-                })
-                .then(function (content) {
-                  saveAs(content, `${bucketName}.zip`);
-                });
-              dispatch(alertActions.clear());
-            }
-          })
-          .catch((thrown) => {
-            if (axios.isCancel(thrown)) {
-              dispatch(alertModalActions.stopQueue(slug));
-              dispatch(alertModalActions.hideAbortModal());
-            } else {
-              console.error("axios error");
-            }
           });
-      });
-    });
-  });
+          return startZipDownload(dispatch, req.bucketName, objectsToDownload);
+        })
+        .catch((err) => {
+          dispatch(
+            alertActions.set({
+              type: "danger",
+              message: err.message,
+            })
+          );
+        });
+    }
+  };
 };
 
 export const loadManageDeviceEditor = () => ({
@@ -993,6 +911,9 @@ export const addProgress = (slug, size, name) => {
 
 export const handleAbortProgressModal = () => {
   return function (dispatch) {
-    source.cancel();
+    // multi-file zip download aborts through its own engine; single-object
+    // downloads still cancel via the shared axios cancel token
+    if (abortZipDownload()) return;
+    if (source) source.cancel();
   };
 };

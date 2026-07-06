@@ -14,13 +14,9 @@
  * limitations under the License.
  */
 
-import * as alertActions from "../alert/actions";
-import * as objectsActions from "../objects/actions";
-import * as bucketActions from "../buckets/actions";
 import { getCurrentBucket } from "../buckets/selectors";
 import { getCurrentPrefix } from "../objects/selectors";
-import { minioBrowserPrefix } from "../constants";
-import web from "../web";
+import { enqueueUpload, cancelUpload } from "./uploadEngine";
 
 export const ADD = "uploads/ADD";
 export const UPDATE_PROGRESS = "uploads/UPDATE_PROGRESS";
@@ -55,109 +51,24 @@ export const hideAbortModal = () => ({
   show: false
 });
 
-let requests = {};
-
-export const addUpload = (xhr, slug, size, name) => {
-  return function(dispatch) {
-    requests[slug] = xhr;
-    dispatch(add(slug, size, name));
-  };
-};
-
 export const abortUpload = slug => {
   return function(dispatch) {
-    const xhr = requests[slug];
-    if (xhr) {
-      xhr.abort();
-    }
+    // cancels the queued or in-flight upload in the engine (no-op if unknown)
+    cancelUpload(slug);
     dispatch(stop(slug));
     dispatch(hideAbortModal());
   };
 };
 
-// TODO: Improve logic for upload files && select prefix throughout the tool
 export const uploadFile = file => {
   return function(dispatch, getState) {
     const state = getState();
     const currentBucket = getCurrentBucket(state) || "Home";
     const currentPrefix = getCurrentPrefix(state);
-    const objectName = `${currentPrefix}${file.name}`;
-    const slug = `${currentBucket}-${currentPrefix}-${file.name}`;
-    web
-      .PresignedPutObject({
-        bucketName: currentBucket,
-        objectName: objectName,
-        expiry: 24 * 60 * 60
-      })
-      .then(res => {
-        let xhr = new XMLHttpRequest();
-        xhr.open("PUT", res.url, true);
-        dispatch(addUpload(xhr, slug, file.size, file.name));
-        xhr.onload = function(event) {
-          if (xhr.status == 401 || xhr.status == 403) {
-            dispatch(hideAbortModal());
-            dispatch(stop(slug));
-            dispatch(
-              alertActions.set({
-                type: "danger",
-                message: "Unauthorized request."
-              })
-            );
-          }
-          if (xhr.status == 500) {
-            dispatch(hideAbortModal());
-            dispatch(stop(slug));
-            dispatch(
-              alertActions.set({
-                type: "danger",
-                message: xhr.responseText
-              })
-            );
-          }
-          if (xhr.status == 200) {
-            dispatch(hideAbortModal());
-            dispatch(stop(slug));
-            dispatch(
-              alertActions.set({
-                type: "success",
-                message: "File '" + file.name + "' uploaded successfully."
-              })
-            );
-            const objectPath =
-              currentBucket == "Home"
-                ? objectName.split("_")[0]
-                : `${currentBucket}/${objectName.split("_")[0]}`;
-            dispatch(bucketActions.fetchBucketsPostUpload(objectPath));
-          }
-        };
-
-        xhr.upload.addEventListener("error", event => {
-          dispatch(stop(slug));
-          dispatch(
-            alertActions.set({
-              type: "danger",
-              message: "Error occurred uploading '" + file.name + "'."
-            })
-          );
-        });
-
-        xhr.upload.addEventListener("progress", event => {
-          if (event.lengthComputable) {
-            let loaded = event.loaded;
-            let total = event.total;
-            dispatch(updateProgress(slug, loaded));
-          }
-        });
-
-        xhr.send(file);
-      })
-      .catch(e => {
-        dispatch(
-          alertActions.set({
-            type: "danger",
-            message: e.message
-          })
-        );
-      });
+    enqueueUpload(dispatch, {
+      bucketName: currentBucket,
+      prefix: currentPrefix,
+      file: file
+    });
   };
 };

@@ -63,3 +63,8 @@ export const statusRequestQueue = createRequestQueue(6);
 // monopolize the ~6-connection S3 pool. Never clear() this queue - uploads
 // are cancelled individually via the upload engine
 export const uploadRequestQueue = createRequestQueue(3);
+
+// Queue for zip-download metadata (size) lookups. Separate from
+// metaRequestQueue, which is cleared on navigation - a download must survive
+// the user browsing to another folder while it runs
+export const downloadRequestQueue = createRequestQueue(6);

@@ -1,12 +1,12 @@
 {
   "name": "cancloud",
-  "version": "05.09.16",
+  "version": "05.09.17",
   "description": "A React based S3 browser for use with the CANedge",
   "main": "index.js",
   "scripts": {
-    "start": "set NODE_OPTIONS=--openssl-legacy-provider && webpack-dev-server --mode development --open --progress --colors --hot",
-    "build": "set NODE_OPTIONS=--openssl-legacy-provider && webpack --mode production",
-    "simple": "set NODE_OPTIONS=--openssl-legacy-provider && webpack --config webpack.simple.js --mode production",
+    "start": "webpack-dev-server --mode development --open --progress --hot",
+    "build": "webpack --mode production",
+    "simple": "webpack --config webpack.simple.js --mode production",
     "test": "jest"
   },
   "keywords": [],
@@ -59,7 +59,7 @@
     "chart.js": "^2.8.0",
     "classnames": "^2.2.6",
     "concat-stream": "^1.6.2",
-    "config-editor-base": "^3.0.2",
+    "config-editor-base": "^3.0.9",
     "config-editor-tools": "^1.1.2",
     "crc": "^3.8.0",
     "create-file": "^1.0.1",
@@ -69,6 +69,7 @@
     "es6-error": "^4.1.1",
     "events": "^3.0.0",
     "express": "^4.16.4",
+    "fflate": "^0.8.3",
     "file-saver": "^2.0.0",
     "filereader-stream": "^2.0.0",
     "font-awesome": "^4.7.0",
