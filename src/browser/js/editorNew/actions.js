@@ -6,8 +6,24 @@ import * as alertActions from "../alert/actions";
 
 import { isValidUISchema, isValidSchema, isValidConfig, pathSlice } from "../utils";
 
+// the device currently being configured, from the route. Used to drop
+// late-resolving S3 responses after the user switched to another device
+const routeDevice = () => pathSlice(history.location.pathname).prefix;
+
 export const fetchFilesS3 = (prefix) => {
   return function (dispatch) {
+
+    // reset the editor slice up front so no state from a previously
+    // configured device can survive the switch (content, form data, file
+    // lists, detected device type) - e.g. when the new device has no
+    // config/schema files of its own
+    dispatch(editorActions.resetFiles());
+    dispatch(editorActions.setConfigContent(null));
+    dispatch(editorActions.setUpdatedFormData(null));
+    dispatch(editorActions.setConfigContentPreChange(""));
+    dispatch(editorActions.setSchemaContent(null));
+    dispatch(editorActions.setUISchemaContent(null));
+    dispatch(editorActions.setDetectedDeviceType(null));
 
     // list & load devive specific Rule Schemas and Configuration Files
     return web
@@ -17,6 +33,11 @@ export const fetchFilesS3 = (prefix) => {
         marker: "",
       })
       .then((data) => {
+        // drop late responses if the user switched device meanwhile
+        if (prefix !== routeDevice()) {
+          return;
+        }
+
         let allObjects = [];
         allObjects = data.objects.map((object) => object.name.split("/")[0]);
 
@@ -108,6 +129,10 @@ export const fetchFileContentS3 = (fileName, type) => {
         fetch(res.url)
           .then((r) => r.text())
           .then((data) => {
+            // drop late responses if the user switched device meanwhile
+            if (prefix !== routeDevice()) {
+              return;
+            }
             switch (type) {
               case "uischema":
                 dispatch(editorActions.resetLocalUISchemaList());
@@ -131,6 +156,11 @@ export const fetchFileContentS3 = (fileName, type) => {
             }
           })
           .catch((e) => {
+            // never let a failed fetch for a previous device clear the
+            // current device's content
+            if (prefix !== routeDevice()) {
+              return;
+            }
             switch (true) {
               case type == "uischema":
                 dispatch(editorActions.setUISchemaContent(null));

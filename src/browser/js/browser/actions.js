@@ -58,7 +58,7 @@ export const fetchDeviceFileIfNew = (device) => {
   return function (dispatch, getState) {
     if (
       getState().buckets.currentBucket ==
-        getState().editor.prevDeviceFileDevice ||
+        getState().browser.prevDeviceFileDevice ||
       device == "Home"
     ) {
       return;

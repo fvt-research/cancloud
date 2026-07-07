@@ -13,3 +13,10 @@ simple/*
 *TEMP/*
 
 .claude*
+# packed tarballs (local cross-repo dev only)
+*.tgz
+
+# personal AI-assistant notes (not committed)
+CLAUDE.md
+
+change_node.bat
