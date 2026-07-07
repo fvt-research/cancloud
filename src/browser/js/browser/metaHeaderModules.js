@@ -2,7 +2,7 @@ import React, { Component } from "react";
 import { Bar } from "react-chartjs-2";
 var speedDate = require("speed-date");
 import { barOptionsFunc } from "../dashboardStatus/prepareData";
-import { demoMode, demoDate, sdValidityTest } from "../utils";
+import { demoMode, demoDate, sdValidityTest, canedgeTypeName } from "../utils";
 import Moment from "moment";
 
 export function DeviceImage(props) {
@@ -39,6 +39,7 @@ export function DeviceMeta(props) {
   let deviceFile = deviceFileContent
 
   let log_meta = deviceFile && deviceFile.log_meta;
+  let typeName = canedgeTypeName(deviceFile && deviceFile.type);
   let space_used_mb = deviceFile && deviceFile.space_used_mb;
   let cfg_crc32 = deviceFile && deviceFile.cfg_crc32;
   let fw_ver = deviceFile && deviceFile.fw_ver;
@@ -84,8 +85,14 @@ export function DeviceMeta(props) {
           <table className="table table-background">
             <tbody>
               <tr>
-                <td className="col-md-2">Meta</td>
-                <td>{log_meta}</td>
+                <td className="col-md-2" style={{ whiteSpace: "nowrap" }}>
+                  Type | Meta
+                </td>
+                <td>
+                  {typeName}
+                  {typeName && log_meta ? " | " : null}
+                  {log_meta}
+                </td>
               </tr>
 
               <tr>

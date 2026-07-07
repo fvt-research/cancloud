@@ -135,24 +135,10 @@ export const prepareDataDevices = (
   deviceFileContents,
   configFileCrc32
 ) => {
-  // filter log files & devices based on time period
-  let periodStartNew = new Date();
-
-  if (demoMode) {
-    periodStartNew = new Date(demoDate);
-  }
-
-  periodStartNew.setTime(
-    periodStartNew.getTime() - periodHours * 60 * 60 * 1000
-  );
-
-  deviceFileObjectsFiltered = deviceFileObjects.filter(
-    (e) => e.lastModified >= periodStartNew
-  );
-
-  const deviceIdList = deviceFileObjectsFiltered.map(
-    (device) => device.deviceId
-  );
+  // Device widgets intentionally include ALL loaded devices, independent of the
+  // selected period. periodHours only scopes the log-file widgets (prepareData.js)
+  // and is unused here.
+  deviceFileObjectsFiltered = deviceFileObjects;
 
   const deviceIdListDelta = deviceFileObjectsFiltered.map((device) => {
     const deviceId = device.deviceId;
@@ -166,9 +152,7 @@ export const prepareDataDevices = (
   });
 
 
-  deviceFileContentsFiltered = deviceFileContents.filter((e) =>
-    e && e.id && deviceIdList.includes(e.id) ? e : null
-  );
+  deviceFileContentsFiltered = deviceFileContents.filter((e) => e && e.id);
 
   // device heartbeat pie chart
   let deviceStatusAry = deviceIdListDelta.map(

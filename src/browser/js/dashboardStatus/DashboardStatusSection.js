@@ -257,9 +257,10 @@ class DashboardStatusSection extends React.Component {
               &nbsp; &nbsp;
               <p className="field-description field-description-shift">
                 The device-specific dashboard widgets (e.g. heartbeat metrics)
-                are based on this list of devices. By default all devices are
-                loaded (but metrics are only shown for those that have checked
-                in within the period selected).
+                are based on this list of devices and are shown for all loaded
+                devices, regardless of the selected period. By default all
+                devices are loaded. The period only affects the log file
+                widgets.
               </p>
               <button
                 type="button"

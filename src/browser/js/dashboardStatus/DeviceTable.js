@@ -1,5 +1,6 @@
 import React from "react";
 import Moment from "moment";
+import { canedgeTypeName } from "../utils";
 
 const DeviceTable = (props) => {
   const {
@@ -64,6 +65,7 @@ const DeviceTable = (props) => {
 
     // extract the device ID and various properties from the device.json
     const id = e.deviceId;
+    const type = canedgeTypeName(deviceFile && deviceFile.type);
     const meta = deviceFile && deviceFile.log_meta;
     const fwVer = deviceFile && deviceFile.fw_ver;
     const lastHeartbeat = e.lastModifiedMin;
@@ -71,10 +73,13 @@ const DeviceTable = (props) => {
       maxUploaded && uploadedPerDevice[e.deviceId]
         ? ((uploadedPerDevice[e.deviceId] / maxUploaded) * 100) / 100
         : NaN;
-    const configSync =
-      deviceCrc32Test[0] &&
-      deviceCrc32Test.filter((obj) => obj.name == e.deviceId)[0] &&
-      deviceCrc32Test.filter((obj) => obj.name == e.deviceId)[0].testCrc32;
+    const configSync = {
+      synced:
+        deviceCrc32Test[0] &&
+        deviceCrc32Test.filter((obj) => obj.name == e.deviceId)[0] &&
+        deviceCrc32Test.filter((obj) => obj.name == e.deviceId)[0].testCrc32,
+      crc32: deviceFile && deviceFile.cfg_crc32,
+    };
 
     let storageUsedAbs =
       deviceFile &&
@@ -97,6 +102,7 @@ const DeviceTable = (props) => {
 
     return {
       id,
+      type,
       meta,
       lastHeartbeat,
       time_since_heartbeat_min,
@@ -115,6 +121,7 @@ const DeviceTable = (props) => {
     lastHeartbeat: "Last heartbeat",
     time_since_heartbeat_min: "Time since heartbeat",
     id: "Device ID",
+    type: "Type",
     meta: "Config meta",
     fwVer: "Firmware",
     uploadedMb: "MB uploaded",
@@ -139,10 +146,10 @@ const DeviceTable = (props) => {
   const tableValues = tableData.map((e, indexOuter) => {
     return (
       <tr key={"tableRow " + indexOuter}>
-        {Object.values(e).map((v, index) => {
+        {Object.entries(e).map(([key, v], index) => {
           return (
             <td key={"tableCell " + index}>
-              {index == 3 ? (
+              {key == "time_since_heartbeat_min" ? (
                 <ul className="chart">
                   <li>
                     <span
@@ -180,7 +187,7 @@ const DeviceTable = (props) => {
                     </span>
                   </li>
                 </ul>
-              ) : index == 9 ? (
+              ) : key == "uploadedMb" ? (
                 <ul className="chart">
                   <li>
                     <span
@@ -197,13 +204,13 @@ const DeviceTable = (props) => {
                           whiteSpace: "nowrap"
                         }}
                       >
-                        &nbsp;{Math.round(v * maxUploaded)}
+                        &nbsp;{!isNaN(v) ? Math.round(v * maxUploaded) : ""}
                         {v ? "\u00A0 MB" : null}
                       </div>
                     </span>
                   </li>
                 </ul>
-              ) : index == 4 ? (
+              ) : key == "storageUsed" ? (
                 <ul className="chart">
                   <li>
                     <span
@@ -228,14 +235,15 @@ const DeviceTable = (props) => {
                     </span>
                   </li>
                 </ul>
-              ) : index == 5 ? (
+              ) : key == "storageUsedAbs" ? (
                 <span>{v != undefined ? v + " MB" : null}</span>
-              ) : index == 7 ? (
+              ) : key == "configSync" ? (
                 <div>
                   {" "}
-                  {v == true ? (
+                  {v.synced == true ? (
                     <p className="blue-text zero-bottom-margin">
-                      <i className="fa fa-check" />
+                      <i className="fa fa-check" />{" "}
+                      <span className="grey-text">{v.crc32}</span>
                     </p>
                   ) : (
                     <p className="red-text zero-bottom-margin">

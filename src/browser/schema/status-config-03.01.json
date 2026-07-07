@@ -27,7 +27,7 @@
         "class_name": "col-sm-2",
         "height": 105,
         "colors": "",
-		"comment": "Number of devices with a heartbeat within the period"
+		"comment": "Number of connected devices loaded (independent of the selected period)"
       },
 	   {
         "title": "Avg. SD storage used",

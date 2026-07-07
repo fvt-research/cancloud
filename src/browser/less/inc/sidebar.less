@@ -204,6 +204,12 @@
 	}
 }
 
+/* keep each device entry on one line, ellipsizing by width; the full
+   "<deviceId> | <meta>" is shown via the anchor's title tooltip on hover */
+.fesl-inner li > a {
+	.text-overflow();
+}
+
 /* Dropdown */
 .bucket-dropdown {
 	position: absolute;
