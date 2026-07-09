@@ -202,6 +202,17 @@ div[class="check-box-container multi-select"] > div > button[class*="css-"]{
   text-align: right;
   width: 100%;
   float: left;
+  position: relative;
+}
+
+// page title pinned to the upper-left corner - absolute so it never pushes
+// the period selector or the widgets below
+.dashboard-page-title {
+  position: absolute;
+  left: 26px; // align with the widget titles below (not the card edge)
+  top: 2px;
+  color: @text-color;
+  z-index: 2;
 }
 
 .period-hours-selector {

@@ -156,7 +156,7 @@ const DeviceTable = (props) => {
                       style={{
                         width: v ? (v / maxDelta) * 100 : 0,
                         height: "100%",
-                        backgroundColor: "#3d85c6",
+                        backgroundColor: "#46a5e0",
                         color: v / maxDelta > 0.4 ? "white" : "#8e8e8e",
                       }}
                     >
@@ -194,7 +194,7 @@ const DeviceTable = (props) => {
                       style={{
                         width: v ? v * 100 : 0,
                         height: "100%",
-                        backgroundColor: "#3d85c6",
+                        backgroundColor: "#46a5e0",
                         color: v > 0.4 ? "white" : "#8e8e8e",
                       }}
                     >

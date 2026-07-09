@@ -23,6 +23,7 @@ import uploads from "./uploads/reducer";
 import {editor} from "config-editor-base"
 import alertModals from "./alertModals/reducer";
 import dashboardStatus from "./dashboardStatus/reducer";
+import otaBatch from "./otaBatch/reducer";
 
 
 const rootReducer = combineReducers({
@@ -33,7 +34,8 @@ const rootReducer = combineReducers({
   uploads,
   editor,
   dashboardStatus,
-  alertModals
+  alertModals,
+  otaBatch
 });
 
 export default rootReducer;

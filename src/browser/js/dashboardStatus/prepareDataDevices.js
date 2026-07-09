@@ -271,7 +271,7 @@ export const prepareDataDevices = (
   let deviceFWSorted = {};
   let deviceFWData = [];
   let deviceFWLabel = [];
-  let deviceFWColorFull = "#666666 #999999 #cfcfcf #3d85c6 #cfe2f3".split(" ");
+  let deviceFWColorFull = "#666666 #999999 #cfcfcf #46a5e0 #cfe2f3".split(" ");
   let deviceFWColor = [];
 
   Object.keys(deviceFWUnsorted)
@@ -361,7 +361,7 @@ export const prepareDataDevices = (
         },
         {
           data: configCrc32Data,
-          backgroundColor: "#3d85c6 #cfe2f3".split(" "),
+          backgroundColor: "#46a5e0 #cfe2f3".split(" "),
           label: "#devices (config)",
         },
       ],

@@ -308,7 +308,7 @@ export const prepareData = (
         {
           type: "bar",
           data: Object.values(uploadedPerTime),
-          backgroundColor: "#3d85c6"
+          backgroundColor: "#46a5e0"
         }
       ],
       labels: Object.keys(uploadedPerTime)

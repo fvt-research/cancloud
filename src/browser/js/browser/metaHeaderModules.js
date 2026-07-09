@@ -136,25 +136,34 @@ export function DeviceMeta(props) {
 }
 
 export function DeviceMetaLogFileChart(props) {
-  if (
+  const hasChart =
     props.dataUploadTime &&
     props.dataUploadTime.datasets &&
     props.dataUploadTime.datasets.length &&
-    props.dataUploadTime.labels.length
-  ) {
-    return (
-      <div className="col-sm-6">
-        <div className="row">
-          <div className="col-sm-7">
-            <p>Log file data uploaded last week (MB/hour)</p>
-          </div>
-          <div className="col-sm-5 chart-menu">
-            <a href="" onClick={props.dashboard}>
-              status dashboard
-            </a>
-          </div>
-        </div>
+    props.dataUploadTime.labels.length;
 
+  return (
+    <div className="col-sm-6">
+      <div className="row">
+        <div className="col-sm-7">
+          {hasChart ? <p>Log file data uploaded last week (MB/hour)</p> : null}
+        </div>
+        {/* quick links in the upper-right corner, above the plot */}
+        <div className="col-sm-5 chart-menu">
+          <a href="" onClick={props.dashboard}>
+            status dashboard
+          </a>
+          <a
+            href=""
+            onClick={props.otaBatchManager}
+            style={{ marginLeft: "18px" }}
+          >
+            OTA batch manager
+          </a>
+        </div>
+      </div>
+
+      {hasChart ? (
         <div>
           <Bar
             data={props.dataUploadTime}
@@ -163,11 +172,9 @@ export function DeviceMetaLogFileChart(props) {
             key={"bar-chart-logfiles"}
           />
         </div>
-      </div>
-    );
-  } else {
-    return null;
-  }
+      ) : null}
+    </div>
+  );
 }
 
 let periodHours = 7 * 24;
@@ -201,7 +208,7 @@ export const prepareDeviceData = mf4Objects => {
       {
         type: "bar",
         data: Object.values(uploadedPerTime),
-        backgroundColor: "#3d85c6"
+        backgroundColor: "#46a5e0"
       }
     ],
     labels: Object.keys(uploadedPerTime)

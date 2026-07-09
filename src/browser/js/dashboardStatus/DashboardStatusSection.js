@@ -190,6 +190,9 @@ class DashboardStatusSection extends React.Component {
       <div>
         <div className="dashboard-block" />
         <div className="multi-check-form">
+          <span className="widget-title dashboard-page-title">
+            Status Dashboard
+          </span>
           <div className="period-hours-form">
             <PeriodMenu
               periodHours={this.state.periodHours}

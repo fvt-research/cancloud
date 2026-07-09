@@ -21,12 +21,14 @@ import Editor from "./editorNew/Editor";
 const Browser =  require("./browser/Browser");
 const Login =  require("./browser/Login");
 const DashboardStatus = require("./dashboardStatus");
+const OtaBatchManager = require("./otaBatch");
 
 export const App = () => {
   return (
     <Switch>
       <Route path={"/login"} component={Login} />
       <Route path={"/status-dashboard"} component={DashboardStatus} />
+      <Route path={"/ota-batch-manager"} component={OtaBatchManager} />
       <Route path={"/configuration/:device?"} component={Editor} />
       <Route path={"/:bucket?/*"} component={Browser} />
     </Switch>

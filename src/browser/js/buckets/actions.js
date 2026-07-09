@@ -20,6 +20,7 @@ import * as alertActions from "../alert/actions";
 import * as objectsActions from "../objects/actions";
 import * as browserActions from "../browser/actions";
 import * as dashboardStatusActions from "../dashboardStatus/actions";
+import * as otaBatchActions from "../otaBatch/actions";
 import { pathSlice, isValidDevice } from "../utils";
 
 export const SET_LIST = "buckets/SET_LIST";
@@ -53,9 +54,13 @@ export const fetchBuckets = () => {
 
       // load all device.json files & dispatch meta data. On the status dashboard
       // route, listAllObjects already fetches all device.json files (and dispatches
-      // the sidebar meta data), so skip the duplicate fetch there
+      // the sidebar meta data), so skip the duplicate fetch there. The OTA batch
+      // manager needs the device.json contents keyed by FOLDER (plus heartbeats),
+      // so its bootstrap wraps the same fetch
       if (bucket == "status-dashboard") {
         dispatch(dashboardStatusActions.listAllObjects());
+      } else if (bucket == "ota-batch-manager") {
+        dispatch(otaBatchActions.bootstrapDeviceData());
       } else {
         dispatch(dashboardStatusActions.fetchDeviceFileContentAll(devices));
       }

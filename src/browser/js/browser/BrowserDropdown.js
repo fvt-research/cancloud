@@ -63,6 +63,11 @@ export class BrowserDropdown extends React.Component {
     history.push("/status-dashboard/");
   }
 
+  otaBatchManager(e) {
+    e.preventDefault();
+    history.push("/ota-batch-manager/");
+  }
+
   render() {
     return (
       <li>
@@ -79,6 +84,11 @@ export class BrowserDropdown extends React.Component {
             <li>
               <a href="" onClick={this.dashboard.bind(this)}>
                 Status dashboard <i className="pie-icon" />
+              </a>
+            </li>
+            <li>
+              <a href="" onClick={this.otaBatchManager.bind(this)}>
+                OTA batch manager <i className="fa fa-upload" />
               </a>
             </li>
             <li>

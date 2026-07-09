@@ -251,6 +251,9 @@ export const selectPrefix = (prefix) => {
     if (bucket == "status-dashboard") {
       return;
     }
+    if (bucket == "ota-batch-manager") {
+      return;
+    }
 
     dispatch(setCurrentPrefix(prefix));
     dispatch(fetchObjects());

@@ -1,0 +1,535 @@
+// Pure evaluation pipeline for the OTA batch manager. No S3/history imports -
+// unit-testable. Reuses the single-device building blocks verbatim so fleet
+// and single-device behavior cannot diverge:
+// - merge semantics = PartialConfigLoader / EncryptionModal (deepmerge,
+//   arrays overwritten)
+// - schema validation = the ajv recipe compiled in cache.js
+// - config warnings = editorActions.collectConfigurationWarnings
+// - encryption analysis/guards = config-editor-tools encryptionFields
+
+import { editorActions } from "config-editor-base";
+import { encryptionFields } from "config-editor-tools";
+import { SUPPORTED_REVISIONS, STALE_HEARTBEAT_MS } from "./constants";
+
+const merge = require("deepmerge");
+
+const overwriteMerge = (destinationArray, sourceArray) => sourceArray;
+
+export const mergeConfig = (config, partial) =>
+  merge(config, partial, { arrayMerge: overwriteMerge });
+
+const isPlainObject = (value) =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
+const getPath = (obj, path) => {
+  let node = obj;
+  for (let i = 0; i < path.length; i++) {
+    if (!isPlainObject(node)) return undefined;
+    node = node[path[i]];
+  }
+  return node;
+};
+
+const hasPath = (obj, path) => {
+  let node = obj;
+  for (let i = 0; i < path.length; i++) {
+    if (!isPlainObject(node) || !(path[i] in node)) return false;
+    node = node[path[i]];
+  }
+  return true;
+};
+
+// The five credential sections - same map as analyzeConfigEncryption
+// (config-editor-tools encryptionFields.js), verified for 01.07-01.09
+const CRED_SECTIONS = [
+  {
+    id: "log",
+    flagPath: ["log", "encryption", "keyformat"],
+    valuePaths: [["log", "encryption", "pwd"]],
+    plainFlagValue: 0,
+    encryptedFlagValue: 1
+  },
+  {
+    id: "wifi",
+    flagPath: ["connect", "wifi", "keyformat"],
+    // the whole accesspoint array counts as the value (arrays merge wholesale)
+    valuePaths: [["connect", "wifi", "accesspoint"]],
+    plainFlagValue: 0,
+    encryptedFlagValue: 1
+  },
+  {
+    id: "cellular",
+    flagPath: ["connect", "cellular", "keyformat"],
+    valuePaths: [["connect", "cellular", "pin"]],
+    plainFlagValue: 0,
+    encryptedFlagValue: 1
+  },
+  {
+    id: "s3",
+    flagPath: ["connect", "s3", "server", "keyformat"],
+    valuePaths: [["connect", "s3", "server", "secretkey"]],
+    plainFlagValue: 0,
+    encryptedFlagValue: 1
+  },
+  {
+    id: "webserver",
+    flagPath: ["connect", "webserver", "security"],
+    valuePaths: [["connect", "webserver", "password"]],
+    plainFlagValue: 1, // Basic (plain)
+    encryptedFlagValue: 2 // Basic with encrypted password
+  }
+];
+
+// recursive defense-in-depth scans over the (small) partial object
+const scanDeep = (node, visit, path) => {
+  if (Array.isArray(node)) {
+    node.forEach((item, i) => scanDeep(item, visit, path + "[" + i + "]"));
+  } else if (isPlainObject(node)) {
+    Object.keys(node).forEach((key) => {
+      const childPath = path ? path + "." + key : key;
+      visit(key, node[key], childPath);
+      scanDeep(node[key], visit, childPath);
+    });
+  }
+};
+
+// Facts about which credential-relevant paths a partial touches
+export const scanPartialCredentials = (partial) => {
+  const facts = {
+    kpubPaths: [], // any non-empty kpub anywhere (device-specific!)
+    encryptedFlagPaths: [], // any keyformat===1 / webserver security===2
+    clearsKpub: false, // general.security.kpub === ""
+    touchesMeta: hasPath(partial, ["general", "device", "meta"]),
+    touchesAnyFlag: false,
+    sections: {}
+  };
+
+  scanDeep(partial, (key, value, path) => {
+    if (key === "kpub" && typeof value === "string" && value !== "") {
+      facts.kpubPaths.push(path);
+    }
+    if (key === "keyformat" && value === 1) {
+      facts.encryptedFlagPaths.push(path);
+    }
+  }, "");
+
+  if (getPath(partial, ["connect", "webserver", "security"]) === 2) {
+    facts.encryptedFlagPaths.push("connect.webserver.security");
+  }
+  if (getPath(partial, ["general", "security", "kpub"]) === "") {
+    facts.clearsKpub = true;
+  }
+
+  CRED_SECTIONS.forEach((section) => {
+    const flagTouched = hasPath(partial, section.flagPath);
+    const flagValue = flagTouched ? getPath(partial, section.flagPath) : undefined;
+    const touchesValue = section.valuePaths.some((p) => hasPath(partial, p));
+    if (flagTouched) facts.touchesAnyFlag = true;
+    facts.sections[section.id] = {
+      flagTouched,
+      setsPlainFlag: flagTouched && flagValue === section.plainFlagValue,
+      touchesValue
+    };
+  });
+
+  return facts;
+};
+
+// Batch-level analysis of a loaded partial: blocking errors + notes
+export const analyzePartial = (partial, deletions) => {
+  const blockers = [];
+  const notes = [];
+
+  if (!isPlainObject(partial)) {
+    blockers.push("The partial config must be a JSON object");
+    return { blockers, notes, facts: null };
+  }
+  if (Object.keys(partial).length === 0) {
+    blockers.push("The partial config is empty - nothing to apply");
+    return { blockers, notes, facts: null };
+  }
+
+  const facts = scanPartialCredentials(partial);
+
+  if (facts.kpubPaths.length) {
+    blockers.push(
+      "The partial contains a server public key (" +
+        facts.kpubPaths.join(", ") +
+        "). Encryption keys are device-specific and must never be sent to multiple devices - use the Batch encryption mode instead"
+    );
+  }
+  if (facts.encryptedFlagPaths.length) {
+    blockers.push(
+      "The partial sets a password format to Encrypted (" +
+        facts.encryptedFlagPaths.join(", ") +
+        "). Encrypted passwords are device-specific and must never be sent to multiple devices - use the Batch encryption mode instead"
+    );
+  }
+  if (facts.clearsKpub) {
+    notes.push(
+      "The partial clears the server public key on all devices - devices left with encrypted passwords will be blocked individually"
+    );
+  }
+  if (facts.touchesMeta) {
+    notes.push(
+      'The partial sets general.device.meta ("' +
+        getPath(partial, ["general", "device", "meta"]) +
+        '") - every selected device will get the same meta name'
+    );
+  }
+  if (deletions && deletions.length) {
+    notes.push(
+      deletions.length +
+        " deleted setting(s) from the editor changes cannot be expressed in a partial config and were excluded: " +
+        deletions.join(", ") +
+        ". Devices keep their current values for these"
+    );
+  }
+
+  return { blockers, notes, facts };
+};
+
+// -------------------------------------------------------------------------
+// shared per-device gates (device.json / revision / artifact presence)
+
+const REV_FROM_SCHEMA = /^schema-(\d{2}\.\d{2})\.json$/;
+
+const deviceBaseGates = (input) => {
+  const { deviceId, deviceJson, config, schemaStatus, validator } = input;
+  const { getConfigRevision, DEVICE_TYPE_MAP } = encryptionFields;
+
+  if (
+    !deviceJson ||
+    typeof deviceJson !== "object" ||
+    typeof deviceJson.id !== "string"
+  ) {
+    return { reason: "device.json is missing or invalid" };
+  }
+  if (deviceJson.id.toUpperCase() !== deviceId.toUpperCase()) {
+    return {
+      reason:
+        "device.json id (" +
+        deviceJson.id +
+        ") does not match the folder (" +
+        deviceId +
+        ") - possibly a cloned/swapped SD card"
+    };
+  }
+  if (DEVICE_TYPE_MAP[deviceJson.type] === undefined) {
+    return { reason: 'Unrecognized device type "' + deviceJson.type + '"' };
+  }
+
+  const revCfg = getConfigRevision(deviceJson.cfg_name);
+  const schMatch = REV_FROM_SCHEMA.exec(deviceJson.sch_name || "");
+  const revSch = schMatch ? schMatch[1] : null;
+  const revVer = deviceJson.cfg_ver;
+  if (!revCfg || revCfg !== revSch || revCfg !== revVer) {
+    return {
+      reason:
+        "device.json is inconsistent (cfg_name " +
+        revCfg +
+        " / sch_name " +
+        revSch +
+        " / cfg_ver " +
+        revVer +
+        ") - the device may be mid-update"
+    };
+  }
+  if (!SUPPORTED_REVISIONS.includes(revCfg)) {
+    return {
+      reason:
+        "Config revision " +
+        revCfg +
+        " is not supported (supported: " +
+        SUPPORTED_REVISIONS.join(", ") +
+        ")"
+    };
+  }
+
+  if (!config || config.meta.status === "loading") {
+    return { pending: true };
+  }
+  if (config.meta.status === "missing") {
+    return {
+      reason:
+        "Current config (" +
+        deviceJson.cfg_name +
+        ") not found in the device folder"
+    };
+  }
+  if (config.meta.status === "invalid" || !config.data) {
+    return {
+      reason: deviceJson.cfg_name + " in the device folder is not valid JSON"
+    };
+  }
+
+  if (schemaStatus === "loading") {
+    return { pending: true };
+  }
+  if (schemaStatus === "missing") {
+    return {
+      reason:
+        "Rule schema (" + deviceJson.sch_name + ") missing in the device folder"
+    };
+  }
+  if (schemaStatus === "invalid" || !validator) {
+    return {
+      reason:
+        "Rule schema (" +
+        deviceJson.sch_name +
+        ") in the device folder is not a usable JSON Schema"
+    };
+  }
+
+  return { revision: revCfg };
+};
+
+const crcSyncWarning = (deviceJson, configCrc32) => {
+  if (
+    typeof deviceJson.cfg_crc32 !== "string" ||
+    deviceJson.cfg_crc32 === "" ||
+    !configCrc32
+  ) {
+    return "Device has not reported a config checksum - sync state unknown";
+  }
+  // identical predicate to the status dashboard (prepareDataDevices.js)
+  return parseInt(configCrc32, 16) === parseInt(deviceJson.cfg_crc32, 16)
+    ? null
+    : "Device has not yet adopted the current server config (crc32 mismatch)";
+};
+
+// generic message (no per-device day count) so the left panel can aggregate
+// it into a single line; the table's heartbeat columns show the specifics
+const heartbeatWarning = (heartbeatMs, nowMs) => {
+  if (!heartbeatMs || !nowMs) return null;
+  const age = nowMs - heartbeatMs;
+  if (age <= STALE_HEARTBEAT_MS) return null;
+  return "Last heartbeat more than a week ago - the device only adopts the new config when it next connects";
+};
+
+// -------------------------------------------------------------------------
+// partial mode
+
+// input: { deviceId, deviceJson, heartbeatMs, nowMs,
+//          config: { data: {text, parsed}|undefined, meta: {status, crc32} },
+//          schemaStatus, validator, partial, facts }
+// output: { status: "pending"|"blocked"|"unchanged"|"ready",
+//           reasons, warnings, targetName, baselineCrc32, merged, mergedText }
+export const evaluateDevicePartial = (input) => {
+  const { deviceId, deviceJson, heartbeatMs, nowMs, config, validator, partial, facts } = input;
+
+  const base = deviceBaseGates(input);
+  if (base.pending) return { status: "pending", reasons: [], warnings: [] };
+  if (base.reason) {
+    return { status: "blocked", reasons: [base.reason], warnings: [] };
+  }
+
+  const merged = mergeConfig(config.data.parsed, partial);
+
+  if (!validator(merged)) {
+    const errors = validator.errors || [];
+    const first = errors[0]
+      ? (errors[0].dataPath || "config") + " " + errors[0].message
+      : "unknown error";
+    const more = errors.length > 1 ? " (+" + (errors.length - 1) + " more)" : "";
+    return {
+      status: "blocked",
+      reasons: [
+        "Merged config fails validation vs the device's schema: " + first + more
+      ],
+      warnings: []
+    };
+  }
+
+  // credential-safety gate (D9 / D10 / D14)
+  const mergedAnalysis = encryptionFields.analyzeConfigEncryption(merged);
+  const mergedSections = {};
+  mergedAnalysis.sections.forEach((s) => {
+    mergedSections[s.id] = s;
+  });
+  const deviceAnalysis = encryptionFields.analyzeConfigEncryption(
+    config.data.parsed
+  );
+  const deviceSections = {};
+  deviceAnalysis.sections.forEach((s) => {
+    deviceSections[s.id] = s;
+  });
+
+  const reasons = [];
+  CRED_SECTIONS.forEach((section) => {
+    const sectionFacts = facts.sections[section.id];
+    if (!sectionFacts) return;
+    const mergedEncrypted =
+      mergedSections[section.id] && mergedSections[section.id].keyformat === 1;
+    const deviceEncrypted =
+      deviceSections[section.id] && deviceSections[section.id].keyformat === 1;
+
+    if (sectionFacts.touchesValue && mergedEncrypted) {
+      reasons.push(
+        "The partial sets a plain-text password (" +
+          section.id +
+          "), but this device's config expects it encrypted (keyformat: Encrypted). Encrypt per device or set the format to Plain in the same partial"
+      );
+    }
+    if (sectionFacts.setsPlainFlag && !sectionFacts.touchesValue && deviceEncrypted) {
+      reasons.push(
+        "The partial sets the " +
+          section.id +
+          " password format to plain-text but does not provide the password value - the device would treat its old encrypted value as a literal password"
+      );
+    }
+  });
+
+  const mergedHasEncrypted = mergedAnalysis.sections.some(
+    (s) => s.keyformat === 1
+  );
+  const mergedKpub = getPath(merged, ["general", "security", "kpub"]);
+  if (
+    (facts.clearsKpub || facts.touchesAnyFlag) &&
+    mergedHasEncrypted &&
+    !mergedKpub
+  ) {
+    reasons.push(
+      "After this change the device would have encrypted passwords but no server public key - it could not decrypt its credentials"
+    );
+  }
+
+  if (reasons.length) {
+    return { status: "blocked", reasons, warnings: [] };
+  }
+
+  const mergedText = JSON.stringify(merged, null, 2);
+  const result = {
+    status: "ready",
+    reasons: [],
+    warnings: [],
+    targetName: deviceJson.cfg_name,
+    baselineCrc32: config.meta.crc32,
+    merged,
+    mergedText
+  };
+
+  if (mergedText === config.data.text) {
+    result.status = "unchanged";
+    result.reasons = ["No changes for this device (already applied)"];
+    return result;
+  }
+
+  const warnings = editorActions.collectConfigurationWarnings(merged);
+  const sync = crcSyncWarning(deviceJson, config.meta.crc32);
+  if (sync) warnings.push(sync);
+  const stale = heartbeatWarning(heartbeatMs, nowMs);
+  if (stale) warnings.push(stale);
+  result.warnings = warnings;
+
+  return result;
+};
+
+// -------------------------------------------------------------------------
+// encryption mode
+
+// same base input minus partial/facts
+export const evaluateDeviceEncryption = (input) => {
+  const { deviceJson, heartbeatMs, nowMs, config, validator } = input;
+
+  const base = deviceBaseGates(input);
+  if (base.pending) return { status: "pending", reasons: [], warnings: [] };
+  if (base.reason) {
+    return { status: "blocked", reasons: [base.reason], warnings: [] };
+  }
+
+  const {
+    validateDeviceFile,
+    detectDeviceTypeFromConfig,
+    analyzeConfigEncryption,
+    checkConfigCrcMatch,
+    summarizeDelta
+  } = encryptionFields;
+
+  // reused verbatim from the single-device encryption tool
+  const fileCheck = validateDeviceFile(
+    deviceJson,
+    detectDeviceTypeFromConfig(config.data.parsed),
+    base.revision
+  );
+  if (!fileCheck.ok) {
+    return { status: "blocked", reasons: fileCheck.errors, warnings: [] };
+  }
+
+  // the device's current config must itself be valid before we transform it
+  if (!validator(config.data.parsed)) {
+    return {
+      status: "blocked",
+      reasons: ["The device's current config fails validation vs its schema"],
+      warnings: []
+    };
+  }
+
+  const analysis = analyzeConfigEncryption(config.data.parsed);
+  const checks = analysis.checks;
+
+  if (checks.noSections) {
+    return {
+      status: "blocked",
+      reasons: ["No encryptable fields active in this Configuration File"],
+      warnings: []
+    };
+  }
+  if (checks.allEncrypted) {
+    return {
+      status: "unchanged",
+      reasons: ["All passwords already encrypted"],
+      warnings: [],
+      targetName: deviceJson.cfg_name,
+      baselineCrc32: config.meta.crc32
+    };
+  }
+  if (!checks.noMixedFormats) {
+    return {
+      status: "blocked",
+      reasons: [
+        "Some passwords are encrypted while others are plain - resolve via the device's Encryption tool in the editor"
+      ],
+      warnings: []
+    };
+  }
+  if (checks.lengthViolations.length) {
+    return {
+      status: "blocked",
+      reasons: [
+        "Password too long to encrypt: " + checks.lengthViolations.join(", ")
+      ],
+      warnings: []
+    };
+  }
+
+  const warnings = [];
+  const crc = checkConfigCrcMatch(deviceJson, config.data.text);
+  if (crc.checked && !crc.match) {
+    warnings.push(
+      "device.json checksum differs from the device folder's config file - the device has not yet adopted the current server config"
+    );
+  } else if (!crc.checked) {
+    warnings.push("Device has not reported a config checksum - sync state unknown");
+  }
+  checks.blankFields.forEach((label) =>
+    warnings.push("Blank password will be encrypted: " + label)
+  );
+  if (checks.pinSkipped) {
+    warnings.push("Blank SIM PIN cannot be encrypted - left as-is");
+  }
+  if (checks.kpubReplaced) {
+    warnings.push("Existing server public key will be replaced");
+  }
+  const stale = heartbeatWarning(heartbeatMs, nowMs);
+  if (stale) warnings.push(stale);
+
+  return {
+    status: "ready",
+    reasons: [],
+    warnings,
+    targetName: deviceJson.cfg_name,
+    baselineCrc32: config.meta.crc32,
+    encryptionSummary: summarizeDelta(analysis)
+  };
+};

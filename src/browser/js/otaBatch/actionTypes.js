@@ -1,0 +1,21 @@
+// Action type constants shared by actions.js, submitEngine.js and reducer.js
+// (separate module so the submit engine does not import actions.js circularly)
+
+export const SET_MODE = "otaBatch/SET_MODE";
+export const SET_DEVICE_DATA = "otaBatch/SET_DEVICE_DATA";
+export const SET_PARTIAL = "otaBatch/SET_PARTIAL";
+export const CLEAR_PARTIAL = "otaBatch/CLEAR_PARTIAL";
+export const SET_ARTIFACTS_REQUESTED = "otaBatch/SET_ARTIFACTS_REQUESTED";
+export const PATCH_ARTIFACTS = "otaBatch/PATCH_ARTIFACTS";
+export const SET_EVALUATIONS = "otaBatch/SET_EVALUATIONS";
+export const BUMP_EVAL_TOKEN = "otaBatch/BUMP_EVAL_TOKEN";
+export const SET_QUERY = "otaBatch/SET_QUERY";
+export const TOGGLE_SELECT = "otaBatch/TOGGLE_SELECT";
+export const SET_SELECTION = "otaBatch/SET_SELECTION";
+export const SET_CONFIRM_OPEN = "otaBatch/SET_CONFIRM_OPEN";
+export const RUN_START = "otaBatch/RUN_START";
+export const RUN_APPEND = "otaBatch/RUN_APPEND";
+export const RUN_DEVICE_STATUS = "otaBatch/RUN_DEVICE_STATUS";
+export const RUN_ABORT_REQUESTED = "otaBatch/RUN_ABORT_REQUESTED";
+export const RUN_DONE = "otaBatch/RUN_DONE";
+export const RESET = "otaBatch/RESET";

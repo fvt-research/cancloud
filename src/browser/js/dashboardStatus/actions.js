@@ -434,9 +434,13 @@ export const fetchDeviceFileContentAll = deviceFileObjects => {
         dispatch(bucketActions.addBucketMetaData());
       }
 
+      // content is included so callers can associate a device.json with its
+      // FOLDER id (deviceFileContents alone only allows matching by content.id,
+      // which hides folder/id mismatches from e.g. cloned SD cards)
       return loaded.map(result => ({
         deviceId: result.deviceId,
-        lastModified: result.lastModified
+        lastModified: result.lastModified,
+        content: result.content
       }));
     });
   };

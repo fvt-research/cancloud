@@ -13,6 +13,12 @@
     &:focus {
         .opacity(0.9);
     }
+
+    &:disabled,
+    &[disabled] {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
 }
 
 /*-----------------------------------
@@ -37,7 +43,8 @@
 }
 
 .btn-white {
-    .btn-variant(#fff, darken(@text-color, 20%));
+    .btn-variant(#fff, #333);
+    border: 1px solid #ccc; // bordered white button (matches the editor "Reset filters" style)
 }
 
 .btn-link {

@@ -24,6 +24,7 @@ import Header from "../browser/Header";
 // import S3 actions
 import * as actionsEditorS3 from "./actions";
 import * as actionsBuckets from "../buckets/actions";
+import * as actionsOtaBatch from "../otaBatch/actions";
 
 // define UIschema and Rule Schema names for auto-loading purposes
 export const uiSchemaAry = [
@@ -180,6 +181,7 @@ class Editor extends React.Component {
             demoMode={demoMode}
             fetchFileContentExt={this.props.fetchFileContentS3}
             updateConfigFileExt={this.props.updateConfigFileS3}
+            onTransferPartial={this.props.transferPartialToOta}
           />
         </div>
       </div>
@@ -202,7 +204,8 @@ const mapDispatchToProps = (dispatch) => {
     selectBucket: (bucket) => dispatch(actionsBuckets.selectBucket(bucket)),
     fetchFilesS3: (prefix) => dispatch(actionsEditorS3.fetchFilesS3(prefix)),
     fetchFileContentS3: (prefix,type) => dispatch(actionsEditorS3.fetchFileContentS3(prefix,type)),
-    updateConfigFileS3: (content, object) => dispatch(actionsEditorS3.updateConfigFileS3(content, object))
+    updateConfigFileS3: (content, object) => dispatch(actionsEditorS3.updateConfigFileS3(content, object)),
+    transferPartialToOta: (payload) => dispatch(actionsOtaBatch.receivePartialFromEditor(payload))
   };
 };
 

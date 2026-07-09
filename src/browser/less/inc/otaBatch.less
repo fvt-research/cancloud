@@ -1,0 +1,407 @@
+/* OTA batch manager view - widget/card layout matching the status dashboard
+   (white cards on the grey body, 12px #8e8e8e table typography) */
+
+.ota-batch-section {
+    /* clear the fixed header (same clearance as the dashboard-block spacer) */
+    padding: 62px 20px 80px 20px;
+
+    @media (max-width: @screen-sm-min) {
+        padding-top: 120px;
+    }
+}
+
+/* ---- page title ---- */
+
+.ota-page-title {
+    display: block;
+    /* padding-left aligns the title with the tab labels / widget titles */
+    margin: 0 5px 12px 5px;
+    padding-left: 16px;
+    color: @text-color;
+}
+
+/* ---- mode tabs ---- */
+
+.ota-tabs {
+    border-bottom: 1px solid #dbdbdb;
+    margin: 0 5px 12px 5px;
+}
+
+.ota-tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: #8e8e8e;
+    font-size: 14px;
+    text-transform: uppercase;
+    padding: 8px 16px;
+    margin-bottom: -1px;
+    cursor: pointer;
+    outline: none;
+
+    &:hover {
+        color: @blue;
+    }
+
+    &[disabled] {
+        cursor: default;
+        opacity: 0.6;
+    }
+}
+
+.ota-tab-active {
+    color: @blue;
+    border-bottom-color: @blue;
+}
+
+/* ---- 25/75 widget layout ---- */
+
+.ota-batch-layout {
+    display: flex;
+    align-items: stretch;
+}
+
+/* Tall cards that fill the viewport below the header/tabs/footer. Derived from
+   the fixed chrome (~header+title+tabs ~145 + footer ~59 + section & fe-body
+   bottom padding ~160) so the section never exceeds 100vh - i.e. no stray
+   vertical scrollbar - while consuming as much height as is available. */
+.ota-batch-left {
+    flex: 0 0 25%;
+    max-width: 25%;
+    min-width: 260px;
+    min-height: calc(~"100vh - 380px");
+}
+
+.ota-batch-right {
+    flex: 1 1 auto;
+    min-width: 0; /* lets the table container scroll instead of overflowing */
+    min-height: calc(~"100vh - 380px");
+    /* column so the inner device table can flex to fill the card height */
+    display: flex;
+    flex-direction: column;
+}
+
+@media (max-width: 991px) {
+    .ota-batch-layout {
+        display: block;
+    }
+    .ota-batch-left,
+    .ota-batch-right {
+        max-width: 100%;
+    }
+    /* stacked: let both cards size to their content (avoids two tall cards) */
+    .ota-batch-left,
+    .ota-batch-right {
+        min-height: 0;
+    }
+}
+
+/* ---- left widget (encryption-tool-style rows) ---- */
+
+.ota-left-panel {
+    padding: 5px;
+}
+
+.ota-status-row {
+    font-size: 12px;
+    margin-top: 6px;
+}
+
+/* step-by-step guide in the left panel (partial mode) */
+.ota-steps {
+    margin-top: 8px;
+
+    p {
+        font-size: 12px;
+        color: #8e8e8e;
+        margin-bottom: 8px;
+    }
+}
+
+.ota-note-row {
+    color: #ffc107;
+}
+
+.ota-loaded-chip {
+    display: flex;
+    align-items: center;
+    margin-top: 12px;
+    font-size: 12px;
+    color: #999999;
+
+    .ota-chip-remove {
+        background: #999999;
+        color: #ffffff;
+        border: none;
+        border-radius: 3px;
+        cursor: pointer;
+        width: 14px;
+        height: 14px;
+        flex: 0 0 14px; /* stay square even when the loaded label wraps to 2 lines */
+        padding: 0;
+        margin-left: 8px;
+        font-size: 9px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+}
+
+/* ---- device table widget ---- */
+
+.ota-table-controls {
+    display: flex;
+    align-items: center;
+    padding: 5px 5px 12px 5px;
+
+    .ota-search {
+        border: 1px solid #dbdbdb;
+        border-radius: 3px;
+        padding: 6px 12px;
+        width: 280px;
+        max-width: 60%;
+        font-size: 12px;
+        color: @text-color; // match the rest of the table typography (not darker)
+        outline: none;
+
+        &:focus {
+            border-color: @blue;
+        }
+    }
+
+    .ota-counts {
+        margin-left: auto;
+        font-size: 12px;
+        color: #8e8e8e;
+        padding-left: 15px;
+        white-space: nowrap;
+    }
+
+    .ota-refresh-btn {
+        margin-left: 12px;
+        background: none;
+        border: none;
+        color: #b5b5b5; // subtle, lighter than the counts text
+        cursor: pointer;
+        font-size: 12px;
+        padding: 4px 6px;
+        outline: none;
+
+        &:hover {
+            color: @blue;
+        }
+        &[disabled] {
+            cursor: default;
+            opacity: 0.5;
+        }
+    }
+}
+
+/* the table fills the remaining widget height and scrolls internally, so the
+   card height is driven by the widget min-height (not the row count) */
+.ota-device-table {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.ota-table-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+
+    table {
+        /* fixed layout: columns keep consistent widths across both tabs; only
+           the Status column (left without a width) flexes to fill the rest.
+           No min-width - the table always fits its container (columns squish /
+           ellipsize on narrow screens) so there is never a horizontal scroll */
+        table-layout: fixed;
+        width: 100%;
+        font-size: 12px;
+        color: #8e8e8e;
+        margin-bottom: 0;
+    }
+    th {
+        /* wrap long headers into their fixed column width instead of forcing
+           the column wider */
+        white-space: normal;
+        vertical-align: bottom;
+    }
+    /* clip overflowing cell text to the fixed column width (meta carries a
+       title attribute so the full value shows on hover) */
+    td {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+}
+
+.ota-row-blocked {
+    opacity: 0.55;
+
+    td {
+        color: #8e8e8e;
+    }
+}
+
+/* the extra-light #999 grey (crc32, "no change", status) reads as unreadable
+   in the table - especially on dimmed blocked rows - so match it to the row's
+   own #8e8e8e text color */
+.ota-table-scroll .grey-text {
+    color: #8e8e8e;
+}
+
+.ota-status-ready {
+    color: @blue-css;
+}
+
+.ota-status-submitted {
+    color: @brand-success; // #4caf50 - more readable than the bright VI green
+}
+
+.ota-status-error {
+    color: #ff6666;
+}
+
+.orange-text {
+    color: #f0ad4e;
+}
+
+.btn-small.btn-white {
+    padding: 2px 8px;
+    font-size: 11px;
+}
+
+/* "New config" download - plain clickable text (table font) with a leading
+   download icon, instead of a button */
+.ota-download-link {
+    color: @blue-css;
+    cursor: pointer;
+
+    i {
+        margin-right: 4px;
+    }
+    &:hover {
+        color: @blue-css;
+        text-decoration: underline;
+    }
+}
+
+.ota-batch-placeholder {
+    padding: 20px 15px;
+
+    p {
+        font-size: 13px;
+        color: #8e8e8e;
+        margin-bottom: 10px;
+    }
+}
+
+/* ---- run footer (below the 25/75 layout) ---- */
+
+/* not a card - the submit button sits directly below the two widgets, under a
+   full-width divider (mirrors the tabs' bottom border) so it clearly spans both */
+.ota-run-footer {
+    display: flex;
+    align-items: center;
+    margin: 18px 5px 0 5px; /* space above the divider */
+    padding-top: 20px; /* space below the divider, before the button */
+    border-top: 1px solid #dbdbdb;
+
+    .btn {
+        margin-right: 15px;
+    }
+
+    /* fixed width so the button does not resize as the device count changes
+       (fits "Submit to N devices" for counts well beyond 1000) */
+    .btn-primary {
+        min-width: 200px;
+    }
+
+    .ota-run-status {
+        font-size: 12px;
+        color: #8e8e8e;
+        margin-right: 15px;
+    }
+}
+
+/* ---- confirmation modal (compact dialog; overrides the full-screen
+        diff-modal classes it borrows) ---- */
+
+.ota-confirm-modal {
+    height: auto;
+    max-height: 80%;
+    top: 10%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 700px;
+    max-width: 92%;
+    display: flex;
+    flex-direction: column;
+
+    .modal-review-changes-header {
+        height: auto;
+        padding: 20px 25px 5px 25px;
+
+        h4 {
+            margin: 0 0 5px 0;
+        }
+    }
+
+    .modal-custom-content {
+        position: static;
+        flex: 1 1 auto;
+        overflow-y: auto;
+    }
+
+    .modal-custom-footer {
+        position: static;
+        height: auto;
+        padding: 15px 25px;
+    }
+
+    .grey-text {
+        color: #999999;
+    }
+}
+
+.ota-confirm-content {
+    padding: 15px 25px;
+}
+
+.ota-confirm-warnings {
+    margin-top: 12px;
+}
+
+/* acknowledgment checkbox row - flex layout (box + caption sibling); caption
+   at the modal's smaller font size */
+.ota-confirm-ack {
+    margin-top: 15px;
+    font-size: 12px;
+}
+
+.ota-panel-note {
+    font-size: 12px;
+    margin: 6px 0 0 0;
+}
+
+/* ---- navigation quicklinks (Home page + device pages) ---- */
+
+.home-quicklinks {
+    padding: 10px 0 0 15px;
+
+    a {
+        margin-right: 25px;
+        font-size: 12px;
+    }
+}
+
+.device-meta-links {
+    margin-top: 5px;
+
+    a {
+        margin-right: 25px;
+        font-size: 12px;
+    }
+}
