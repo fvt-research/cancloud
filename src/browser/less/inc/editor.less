@@ -322,10 +322,6 @@
   font-family: Consolas;
 }
 
-/* the OBD PID rows wrap the checkbox in a fixed-width span; make that first
-   span a flex box and center the checkbox within it (margin:auto is robust to
-   the wrapper's line-height-inflated height) so the small box lines up with the
-   PID text instead of sitting high on the text baseline */
 .checkbox-white-space > span:first-child {
   display: inline-flex;
   align-items: center;
@@ -368,8 +364,6 @@ input[type="checkbox"]:checked {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23fff' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M4 8l3 3 5-6'/%3E%3C/svg%3E");
 }
 
-/* no lingering focus ring after a click (kept off for mouse + keyboard here to
-   match the app's minimal control styling) */
 input[type="checkbox"]:focus {
   outline: none;
   box-shadow: none;
@@ -385,8 +379,6 @@ input[type="checkbox"]:disabled {
   display: inline-flex;
   align-items: center;
   cursor: pointer;
-  /* center the box within its line box (it is often wrapped in an inline span),
-     so it lines up with adjacent text instead of sitting on the baseline */
   vertical-align: middle;
 }
 

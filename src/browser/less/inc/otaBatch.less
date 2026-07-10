@@ -1,12 +1,5 @@
-/* OTA batch manager view - widget/card layout matching the status dashboard
-   (white cards on the grey body, 12px #8e8e8e table typography) */
-
 .ota-batch-section {
-    /* clear the fixed header (same clearance as the dashboard-block spacer) */
     padding: 62px 20px 12px 20px;
-    /* reclaim most of .fe-body's shared 80px bottom padding for this view only
-       (the shell reserves it for the browser/upload bar, unused here) so the
-       widgets use the full window height without a stray page scrollbar */
     margin-bottom: -72px;
 
     @media (max-width: @screen-sm-min) {
@@ -14,35 +7,23 @@
     }
 }
 
-/* ---- page title ---- */
-
 .ota-page-title {
     display: block;
-    /* padding-left aligns the title with the tab labels / widget titles */
     margin: 0 5px 12px 5px;
     padding-left: 16px;
     color: @text-color;
 }
-
-/* ---- 25/75 widget layout ---- */
 
 .ota-batch-layout {
     display: flex;
     align-items: stretch;
 }
 
-/* Tall cards that fill the viewport below the header/footer. Derived from the
-   fixed chrome (~header+title ~105 + footer ~59 + section & fe-body bottom
-   padding ~140) so the section stays close to 100vh while consuming as much
-   height as is available. */
 .ota-batch-left {
     flex: 0 0 25%;
     max-width: 25%;
     min-width: 260px;
-    min-height: calc(~"100vh - 228px");
-    /* stacked: partial loader on top (fills the remaining height) + the encrypt
-       control sized to its content below (never scrolls). The two cards' own
-       5px margins give the same 10px vertical gap as the gutter to the table. */
+    height: calc(~"100vh - 218px");
     display: flex;
     flex-direction: column;
 }
@@ -54,15 +35,14 @@
 }
 
 .ota-batch-left-bottom {
-    flex: 0 0 auto; /* content height - avoids an inner scrollbar */
+    flex: 0 0 auto;
     min-height: 0;
 }
 
 .ota-batch-right {
     flex: 1 1 auto;
-    min-width: 0; /* lets the table container scroll instead of overflowing */
-    min-height: calc(~"100vh - 228px");
-    /* column so the inner device table can flex to fill the card height */
+    min-width: 0;
+    height: calc(~"100vh - 228px");
     display: flex;
     flex-direction: column;
 }
@@ -71,18 +51,15 @@
     .ota-batch-layout {
         display: block;
     }
-    /* stacked column relaxes so the left cards size to their content */
     .ota-batch-left {
         display: block;
     }
     .ota-batch-left,
     .ota-batch-right {
         max-width: 100%;
-        min-height: 0;
+        height: auto;
     }
 }
-
-/* ---- left widget (encryption-tool-style rows) ---- */
 
 .ota-left-panel {
     padding: 5px;
@@ -93,8 +70,6 @@
     margin-top: 6px;
 }
 
-/* step-by-step guide / widget sub-text in the left panels (12px grey, matching
-   across the Configure devices ordered list and the Encrypt passwords text) */
 .ota-steps {
     margin-top: 8px;
 
@@ -105,7 +80,6 @@
         margin-bottom: 8px;
     }
 
-    /* numbered bullets with a tight indent (not the browser default ~40px) */
     ol {
         margin: 0;
         padding-left: 16px;
@@ -131,7 +105,7 @@
         cursor: pointer;
         width: 14px;
         height: 14px;
-        flex: 0 0 14px; /* stay square even when the loaded label wraps to 2 lines */
+        flex: 0 0 14px;
         padding: 0;
         margin-left: 8px;
         font-size: 9px;
@@ -140,8 +114,6 @@
         justify-content: center;
     }
 }
-
-/* ---- device table widget ---- */
 
 .ota-table-controls {
     display: flex;
@@ -155,7 +127,7 @@
         width: 280px;
         max-width: 60%;
         font-size: 12px;
-        color: @text-color; // match the rest of the table typography (not darker)
+        color: @text-color;
         outline: none;
 
         &:focus {
@@ -175,7 +147,7 @@
         margin-left: 12px;
         background: none;
         border: none;
-        color: #b5b5b5; // subtle, lighter than the counts text
+        color: #b5b5b5;
         cursor: pointer;
         font-size: 12px;
         padding: 4px 6px;
@@ -191,8 +163,6 @@
     }
 }
 
-/* the table fills the remaining widget height and scrolls internally, so the
-   card height is driven by the widget min-height (not the row count) */
 .ota-device-table {
     display: flex;
     flex-direction: column;
@@ -206,10 +176,6 @@
     overflow: auto;
 
     table {
-        /* fixed layout: columns keep consistent widths across both tabs; only
-           the Status column (left without a width) flexes to fill the rest.
-           No min-width - the table always fits its container (columns squish /
-           ellipsize on narrow screens) so there is never a horizontal scroll */
         table-layout: fixed;
         width: 100%;
         font-size: 12px;
@@ -217,19 +183,13 @@
         margin-bottom: 0;
     }
     th {
-        /* wrap long headers into their fixed column width instead of forcing
-           the column wider */
         white-space: normal;
         vertical-align: bottom;
     }
-    /* clip overflowing cell text to the fixed column width (meta carries a
-       title attribute so the full value shows on hover) */
     td {
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        /* center cell content vertically so the row checkbox lines up with the
-           device-ID text next to it */
         vertical-align: middle;
     }
 }
@@ -242,9 +202,6 @@
     }
 }
 
-/* the extra-light #999 grey (crc32, "no change", status) reads as unreadable
-   in the table - especially on dimmed blocked rows - so match it to the row's
-   own #8e8e8e text color */
 .ota-table-scroll .grey-text {
     color: #8e8e8e;
 }
@@ -254,7 +211,7 @@
 }
 
 .ota-status-submitted {
-    color: @brand-success; // #4caf50 - more readable than the bright VI green
+    color: @brand-success;
 }
 
 .ota-status-error {
@@ -265,25 +222,23 @@
     color: #f0ad4e;
 }
 
-/* ---- Sec column: current-config encryption lock ---- */
 .ota-sec-cell {
     text-align: center;
     overflow: visible;
 }
 .ota-lock-encrypted {
-    color: @brand-success; // all passwords encrypted
+    color: @brand-success;
 }
 .ota-lock-plain {
-    color: @red; // no passwords encrypted (all plain)
+    color: @red;
 }
 .ota-lock-mixed {
-    color: @amber; // some encrypted, some plain
+    color: @amber;
 }
 .ota-lock-none {
-    color: #8e8e8e; // no passwords in the config
+    color: #8e8e8e;
 }
 
-/* ---- encrypt-passwords widget (bottom-left) ---- */
 .ota-encrypt-checkbox {
     margin-top: 12px;
     font-size: 12px;
@@ -292,10 +247,6 @@
         margin-left: 8px;
     }
 
-    /* not selectable: show the block cursor over the whole control and mute the
-       label so the disabled state is obvious (the box itself is already dimmed
-       by input:disabled { opacity: 0.5 }). pointer-events:none on the disabled
-       input lets the label's not-allowed cursor show over the box too. */
     &.is-disabled {
         cursor: not-allowed;
 
@@ -313,8 +264,6 @@
     font-size: 11px;
 }
 
-/* "New config" download - plain clickable text (table font) with a leading
-   download icon, instead of a button */
 .ota-download-link {
     color: @blue-css;
     cursor: pointer;
@@ -338,23 +287,17 @@
     }
 }
 
-/* ---- run footer (below the 25/75 layout) ---- */
-
-/* not a card - the submit button sits directly below the two widgets, under a
-   full-width divider (mirrors the tabs' bottom border) so it clearly spans both */
 .ota-run-footer {
     display: flex;
     align-items: center;
-    margin: 18px 5px 0 5px; /* space above the divider */
-    padding-top: 20px; /* space below the divider, before the button */
+    margin: 18px 5px 0 5px;
+    padding-top: 20px;
     border-top: 1px solid #dbdbdb;
 
     .btn {
         margin-right: 15px;
     }
 
-    /* fixed width so the button does not resize as the device count changes
-       (fits "Submit to N devices" for counts well beyond 1000) */
     .btn-primary {
         min-width: 200px;
     }
@@ -365,9 +308,6 @@
         margin-right: 15px;
     }
 }
-
-/* ---- confirmation modal (compact dialog; overrides the full-screen
-        diff-modal classes it borrows) ---- */
 
 .ota-confirm-modal {
     height: auto;
@@ -400,8 +340,6 @@
         height: auto;
         padding: 15px 25px;
 
-        /* stable, balanced button sizes with a consistent gap (the submit label
-           is static so its width no longer jumps between modes) */
         .btn {
             min-width: 120px;
         }
@@ -423,14 +361,10 @@
     margin-top: 12px;
 }
 
-/* acknowledgment checkbox row - flex layout (box + caption sibling); caption
-   at the modal's smaller font size */
 .ota-confirm-ack {
     margin-top: 15px;
     font-size: 12px;
 
-    /* center the checkbox within its fixed-width wrapper span so the caption
-       text lines up with it instead of hanging low (same fix as the OBD rows) */
     > span:first-child {
         display: inline-flex;
         align-items: center;
@@ -445,8 +379,6 @@
     font-size: 12px;
     margin: 6px 0 0 0;
 }
-
-/* ---- navigation quicklinks (Home page + device pages) ---- */
 
 .home-quicklinks {
     padding: 10px 0 0 15px;
