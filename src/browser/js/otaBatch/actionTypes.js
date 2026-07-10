@@ -1,7 +1,7 @@
 // Action type constants shared by actions.js, submitEngine.js and reducer.js
 // (separate module so the submit engine does not import actions.js circularly)
 
-export const SET_MODE = "otaBatch/SET_MODE";
+export const SET_ENCRYPT_PASSWORDS = "otaBatch/SET_ENCRYPT_PASSWORDS";
 export const SET_DEVICE_DATA = "otaBatch/SET_DEVICE_DATA";
 export const SET_PARTIAL = "otaBatch/SET_PARTIAL";
 export const CLEAR_PARTIAL = "otaBatch/CLEAR_PARTIAL";

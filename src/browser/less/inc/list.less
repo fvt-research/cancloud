@@ -171,7 +171,10 @@ div.fesl-row {
         margin-right: 15px;
     }
 
-    input {
+    /* [type=checkbox] raises specificity above the global input[type=checkbox]
+       rule so this invisible 35x35 click overlay is not shrunk to the global
+       12px box (which broke clicks in the middle of the file-browser checkbox) */
+    input[type="checkbox"] {
         position: absolute;
         left: 0;
         top: 0;

@@ -4,14 +4,14 @@ import { connect } from "react-redux";
 import web from "../web";
 import * as actions from "./actions";
 import LeftPanel from "./LeftPanel";
+import EncryptPanel from "./EncryptPanel";
 import OtaDeviceTable from "./OtaDeviceTable";
 import RunFooter from "./RunFooter";
 import ConfirmSubmitModal from "./ConfirmSubmitModal";
 
-// Tab bar + 25/75 widget layout + run footer. In partial mode the device
-// table is revealed only once a valid partial config is loaded (step-by-step
-// journey); in encryption mode selecting the tab is step 1, so the table
-// shows right away.
+// Single unified view: a 25/75 layout with the device dashboard on the right
+// (shown as soon as devices load) and a stacked left column - the partial
+// config loader on top and the optional "Encrypt passwords" control below.
 export class OtaBatchSection extends React.Component {
   constructor(props) {
     super(props);
@@ -40,8 +40,7 @@ export class OtaBatchSection extends React.Component {
   }
 
   render() {
-    const { mode, partial, partialBlockers, devicesLoaded, runActive, setMode } =
-      this.props;
+    const { devicesLoaded } = this.props;
 
     if (!web.LoggedIn()) {
       return (
@@ -53,47 +52,29 @@ export class OtaBatchSection extends React.Component {
       );
     }
 
-    const tableVisible =
-      mode === "encryption" || (partial && partialBlockers.length === 0);
+    // the device dashboard is always shown; only a transient loading hint
+    // appears before device data arrives
+    const tableVisible = devicesLoaded;
 
     return (
       <div className="ota-batch-section">
         <span className="widget-title ota-page-title">OTA Batch Manager</span>
-        <div className="ota-tabs">
-          <button
-            type="button"
-            className={mode === "partial" ? "ota-tab ota-tab-active" : "ota-tab"}
-            disabled={runActive}
-            onClick={() => setMode("partial")}
-          >
-            Configure devices
-          </button>
-          <button
-            type="button"
-            className={
-              mode === "encryption" ? "ota-tab ota-tab-active" : "ota-tab"
-            }
-            disabled={runActive}
-            onClick={() => setMode("encryption")}
-          >
-            Encrypt passwords
-          </button>
-        </div>
 
         <div className="ota-batch-layout">
-          <div className="ota-batch-left dashboard-widget">
-            <LeftPanel />
+          <div className="ota-batch-left">
+            <div className="ota-batch-left-top dashboard-widget">
+              <LeftPanel />
+            </div>
+            <div className="ota-batch-left-bottom dashboard-widget">
+              <EncryptPanel />
+            </div>
           </div>
           <div className="ota-batch-right dashboard-widget">
             {tableVisible ? (
               <OtaDeviceTable />
             ) : (
-              // blank until a partial is loaded (the step guide lives in the
-              // left panel); only a transient device-loading hint is shown
               <div className="ota-batch-placeholder">
-                {!devicesLoaded ? (
-                  <p className="loading-delay">Loading devices ...</p>
-                ) : null}
+                <p className="loading-delay">Loading devices ...</p>
               </div>
             )}
           </div>
@@ -108,15 +89,10 @@ export class OtaBatchSection extends React.Component {
 }
 
 const mapStateToProps = (state) => ({
-  mode: state.otaBatch.mode,
-  partial: state.otaBatch.partial,
-  partialBlockers: state.otaBatch.partialBlockers,
-  devicesLoaded: state.otaBatch.devicesLoaded,
-  runActive: state.otaBatch.run.active
+  devicesLoaded: state.otaBatch.devicesLoaded
 });
 
 const mapDispatchToProps = (dispatch) => ({
-  setMode: (mode) => dispatch(actions.setMode(mode)),
   teardown: () => dispatch(actions.teardownView())
 });
 

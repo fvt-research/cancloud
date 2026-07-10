@@ -112,3 +112,32 @@ describe("otaBatch reducer - run accounting", () => {
     expect(s.run.finished - s.run.failed).toBe(3); // 3 submitted
   });
 });
+
+describe("otaBatch reducer - encrypt toggle & selection prune", () => {
+  it("SET_ENCRYPT_PASSWORDS toggles the flag without touching selection", () => {
+    let s = apply(init(), [
+      { type: actions.SET_SELECTION, selected: { A: true } },
+      { type: actions.SET_ENCRYPT_PASSWORDS, value: true }
+    ]);
+    expect(s.encryptPasswords).toBe(true);
+    expect(s.selected).toEqual({ A: true });
+    s = reducer(s, { type: actions.SET_ENCRYPT_PASSWORDS, value: false });
+    expect(s.encryptPasswords).toBe(false);
+  });
+
+  it("SET_EVALUATIONS prunes the selection to eligible devices", () => {
+    const s = apply(init(), [
+      { type: actions.SET_SELECTION, selected: { A: true, B: true, C: true } },
+      {
+        type: actions.SET_EVALUATIONS,
+        token: 0,
+        evaluations: {
+          A: { status: "eligible", eligible: true },
+          B: { status: "eligible", eligible: false },
+          C: { status: "blocked", eligible: false }
+        }
+      }
+    ]);
+    expect(s.selected).toEqual({ A: true });
+  });
+});

@@ -155,14 +155,14 @@ export const analyzePartial = (partial, deletions) => {
     blockers.push(
       "The partial contains a server public key (" +
         facts.kpubPaths.join(", ") +
-        "). Encryption keys are device-specific and must never be sent to multiple devices - use the Batch encryption mode instead"
+        "). Encryption keys are device-specific and must never be sent to multiple devices - load a plain-text partial and enable Encrypt passwords instead"
     );
   }
   if (facts.encryptedFlagPaths.length) {
     blockers.push(
       "The partial sets a password format to Encrypted (" +
         facts.encryptedFlagPaths.join(", ") +
-        "). Encrypted passwords are device-specific and must never be sent to multiple devices - use the Batch encryption mode instead"
+        "). Encrypted passwords are device-specific and must never be sent to multiple devices - load a plain-text partial and enable Encrypt passwords instead"
     );
   }
   if (facts.clearsKpub) {
@@ -308,54 +308,87 @@ const heartbeatWarning = (heartbeatMs, nowMs) => {
 };
 
 // -------------------------------------------------------------------------
-// partial mode
+// per-device encryption assessment (always on the POST-merge config)
 
-// input: { deviceId, deviceJson, heartbeatMs, nowMs,
-//          config: { data: {text, parsed}|undefined, meta: {status, crc32} },
-//          schemaStatus, validator, partial, facts }
-// output: { status: "pending"|"blocked"|"unchanged"|"ready",
-//           reasons, warnings, targetName, baselineCrc32, merged, mergedText }
-export const evaluateDevicePartial = (input) => {
-  const { deviceId, deviceJson, heartbeatMs, nowMs, config, validator, partial, facts } = input;
+// classify the CURRENT (raw, pre-merge) device config for the Sec column:
+// "none" (no credential sections) / "encrypted" (all encrypted) /
+// "plain" (all plain) / "mixed" (some encrypted, some plain)
+export const classifyCurrentEncryption = (config) => {
+  const sections = encryptionFields.analyzeConfigEncryption(config).sections;
+  if (!sections.length) return "none";
+  const encrypted = sections.filter((s) => s.keyformat === 1).length;
+  if (encrypted === 0) return "plain";
+  if (encrypted === sections.length) return "encrypted";
+  return "mixed";
+};
 
-  const base = deviceBaseGates(input);
-  if (base.pending) return { status: "pending", reasons: [], warnings: [] };
-  if (base.reason) {
-    return { status: "blocked", reasons: [base.reason], warnings: [] };
-  }
+// whether the POST-merge config can be encrypted, plus the per-field summary
+// and encryption-specific warnings. Reuses the single-device building blocks.
+const assessEncryption = (config, deviceJson, revision) => {
+  const {
+    analyzeConfigEncryption,
+    validateDeviceFile,
+    detectDeviceTypeFromConfig,
+    summarizeDelta
+  } = encryptionFields;
 
-  const merged = mergeConfig(config.data.parsed, partial);
-
-  if (!validator(merged)) {
-    const errors = validator.errors || [];
-    const first = errors[0]
-      ? (errors[0].dataPath || "config") + " " + errors[0].message
-      : "unknown error";
-    const more = errors.length > 1 ? " (+" + (errors.length - 1) + " more)" : "";
-    return {
-      status: "blocked",
-      reasons: [
-        "Merged config fails validation vs the device's schema: " + first + more
-      ],
-      warnings: []
-    };
-  }
-
-  // credential-safety gate (D9 / D10 / D14)
-  const mergedAnalysis = encryptionFields.analyzeConfigEncryption(merged);
-  const mergedSections = {};
-  mergedAnalysis.sections.forEach((s) => {
-    mergedSections[s.id] = s;
-  });
-  const deviceAnalysis = encryptionFields.analyzeConfigEncryption(
-    config.data.parsed
+  const analysis = analyzeConfigEncryption(config);
+  const checks = analysis.checks;
+  const fileCheck = validateDeviceFile(
+    deviceJson,
+    detectDeviceTypeFromConfig(config),
+    revision
   );
-  const deviceSections = {};
-  deviceAnalysis.sections.forEach((s) => {
-    deviceSections[s.id] = s;
-  });
 
+  let compatible = true;
+  let reason = null;
+  if (!fileCheck.ok) {
+    compatible = false;
+    reason = fileCheck.errors[0];
+  } else if (!checks.noMixedFormats) {
+    compatible = false;
+    reason = "Some passwords are encrypted while others are plain";
+  } else if (checks.lengthViolations.length) {
+    compatible = false;
+    reason =
+      "Password too long to encrypt: " + checks.lengthViolations.join(", ");
+  }
+
+  const warnings = [];
+  checks.blankFields.forEach((label) =>
+    warnings.push("Blank password will be encrypted: " + label)
+  );
+  if (checks.pinSkipped) {
+    warnings.push("Blank SIM PIN cannot be encrypted - left as-is");
+  }
+
+  return {
+    hasPlain: checks.hasPlainFields,
+    compatible,
+    reason,
+    summary: summarizeDelta(analysis),
+    warnings
+  };
+};
+
+// partial credential-safety gates - kept strict so a plain
+// value is never written under an "encrypted" flag; the encryption analyzer
+// relies on keyformat to tell plaintext from ciphertext
+const partialCredentialGates = (merged, current, facts) => {
   const reasons = [];
+  const mergedSections = {};
+  encryptionFields
+    .analyzeConfigEncryption(merged)
+    .sections.forEach((s) => {
+      mergedSections[s.id] = s;
+    });
+  const deviceSections = {};
+  encryptionFields
+    .analyzeConfigEncryption(current)
+    .sections.forEach((s) => {
+      deviceSections[s.id] = s;
+    });
+
   CRED_SECTIONS.forEach((section) => {
     const sectionFacts = facts.sections[section.id];
     if (!sectionFacts) return;
@@ -368,7 +401,7 @@ export const evaluateDevicePartial = (input) => {
       reasons.push(
         "The partial sets a plain-text password (" +
           section.id +
-          "), but this device's config expects it encrypted (keyformat: Encrypted). Encrypt per device or set the format to Plain in the same partial"
+          "), but this device's config expects it encrypted (keyformat: Encrypted). Set the format to Plain in the same partial and enable Encrypt passwords to re-encrypt it"
       );
     }
     if (sectionFacts.setsPlainFlag && !sectionFacts.touchesValue && deviceEncrypted) {
@@ -380,8 +413,8 @@ export const evaluateDevicePartial = (input) => {
     }
   });
 
-  const mergedHasEncrypted = mergedAnalysis.sections.some(
-    (s) => s.keyformat === 1
+  const mergedHasEncrypted = Object.keys(mergedSections).some(
+    (id) => mergedSections[id].keyformat === 1
   );
   const mergedKpub = getPath(merged, ["general", "security", "kpub"]);
   if (
@@ -393,143 +426,104 @@ export const evaluateDevicePartial = (input) => {
       "After this change the device would have encrypted passwords but no server public key - it could not decrypt its credentials"
     );
   }
+  return reasons;
+};
 
-  if (reasons.length) {
-    return { status: "blocked", reasons, warnings: [] };
+// -------------------------------------------------------------------------
+// unified per-device evaluation
+//
+// A partial is optional. The result carries BOTH the partial-merge outcome and
+// an encryption assessment on the post-merge config, computed once and
+// independent of the encrypt toggle - the toggle only affects display/submit
+// (derived in the selectors).
+//
+// input: { deviceId, deviceJson, heartbeatMs, nowMs,
+//          config: { data: {text, parsed}|undefined, meta: {status, crc32} },
+//          schemaStatus, validator, partial|null, facts|null }
+// output: { status: "pending"|"blocked"|"eligible", eligible, reasons,
+//           partialChanges, warnings, targetName, baselineCrc32,
+//           currentEncStatus, enc, merged, mergedText }
+export const evaluateDevice = (input) => {
+  const { deviceJson, heartbeatMs, nowMs, config, validator, partial, facts } = input;
+
+  const base = deviceBaseGates(input);
+  if (base.pending) {
+    return { status: "pending", eligible: false, reasons: [], warnings: [] };
   }
+  if (base.reason) {
+    return {
+      status: "blocked",
+      eligible: false,
+      reasons: [base.reason],
+      warnings: []
+    };
+  }
+
+  // base ok -> config.data.parsed and validator are present
+  const current = config.data.parsed;
+  const currentEncStatus = classifyCurrentEncryption(current);
+  const merged = partial ? mergeConfig(current, partial) : current;
+
+  if (!validator(merged)) {
+    const errors = validator.errors || [];
+    const first = errors[0]
+      ? (errors[0].dataPath || "config") + " " + errors[0].message
+      : "unknown error";
+    const more = errors.length > 1 ? " (+" + (errors.length - 1) + " more)" : "";
+    return {
+      status: "blocked",
+      eligible: false,
+      reasons: [
+        "Merged config fails validation vs the device's schema: " + first + more
+      ],
+      warnings: [],
+      currentEncStatus
+    };
+  }
+
+  if (partial) {
+    const gateReasons = partialCredentialGates(merged, current, facts);
+    if (gateReasons.length) {
+      return {
+        status: "blocked",
+        eligible: false,
+        reasons: gateReasons,
+        warnings: [],
+        currentEncStatus
+      };
+    }
+  }
+
+  const enc = assessEncryption(merged, deviceJson, base.revision);
 
   const mergedText = JSON.stringify(merged, null, 2);
-  const result = {
-    status: "ready",
-    reasons: [],
-    warnings: [],
-    targetName: deviceJson.cfg_name,
-    baselineCrc32: config.meta.crc32,
-    merged,
-    mergedText
-  };
+  const partialChanges = partial ? mergedText !== config.data.text : false;
+  const eligible = partialChanges || enc.hasPlain;
 
-  if (mergedText === config.data.text) {
-    result.status = "unchanged";
-    result.reasons = ["No changes for this device (already applied)"];
-    return result;
+  // general/partial-side warnings; encryption-specific warnings live in
+  // enc.warnings and are surfaced by the selector only when the toggle is on
+  const warnings = [];
+  if (partialChanges) {
+    editorActions
+      .collectConfigurationWarnings(merged)
+      .forEach((w) => warnings.push(w));
   }
-
-  const warnings = editorActions.collectConfigurationWarnings(merged);
   const sync = crcSyncWarning(deviceJson, config.meta.crc32);
   if (sync) warnings.push(sync);
   const stale = heartbeatWarning(heartbeatMs, nowMs);
   if (stale) warnings.push(stale);
-  result.warnings = warnings;
-
-  return result;
-};
-
-// -------------------------------------------------------------------------
-// encryption mode
-
-// same base input minus partial/facts
-export const evaluateDeviceEncryption = (input) => {
-  const { deviceJson, heartbeatMs, nowMs, config, validator } = input;
-
-  const base = deviceBaseGates(input);
-  if (base.pending) return { status: "pending", reasons: [], warnings: [] };
-  if (base.reason) {
-    return { status: "blocked", reasons: [base.reason], warnings: [] };
-  }
-
-  const {
-    validateDeviceFile,
-    detectDeviceTypeFromConfig,
-    analyzeConfigEncryption,
-    checkConfigCrcMatch,
-    summarizeDelta
-  } = encryptionFields;
-
-  // reused verbatim from the single-device encryption tool
-  const fileCheck = validateDeviceFile(
-    deviceJson,
-    detectDeviceTypeFromConfig(config.data.parsed),
-    base.revision
-  );
-  if (!fileCheck.ok) {
-    return { status: "blocked", reasons: fileCheck.errors, warnings: [] };
-  }
-
-  // the device's current config must itself be valid before we transform it
-  if (!validator(config.data.parsed)) {
-    return {
-      status: "blocked",
-      reasons: ["The device's current config fails validation vs its schema"],
-      warnings: []
-    };
-  }
-
-  const analysis = analyzeConfigEncryption(config.data.parsed);
-  const checks = analysis.checks;
-
-  if (checks.noSections) {
-    return {
-      status: "blocked",
-      reasons: ["No encryptable fields active in this Configuration File"],
-      warnings: []
-    };
-  }
-  if (checks.allEncrypted) {
-    return {
-      status: "unchanged",
-      reasons: ["All passwords already encrypted"],
-      warnings: [],
-      targetName: deviceJson.cfg_name,
-      baselineCrc32: config.meta.crc32
-    };
-  }
-  if (!checks.noMixedFormats) {
-    return {
-      status: "blocked",
-      reasons: [
-        "Some passwords are encrypted while others are plain - resolve via the device's Encryption tool in the editor"
-      ],
-      warnings: []
-    };
-  }
-  if (checks.lengthViolations.length) {
-    return {
-      status: "blocked",
-      reasons: [
-        "Password too long to encrypt: " + checks.lengthViolations.join(", ")
-      ],
-      warnings: []
-    };
-  }
-
-  const warnings = [];
-  const crc = checkConfigCrcMatch(deviceJson, config.data.text);
-  if (crc.checked && !crc.match) {
-    warnings.push(
-      "device.json checksum differs from the device folder's config file - the device has not yet adopted the current server config"
-    );
-  } else if (!crc.checked) {
-    warnings.push("Device has not reported a config checksum - sync state unknown");
-  }
-  checks.blankFields.forEach((label) =>
-    warnings.push("Blank password will be encrypted: " + label)
-  );
-  if (checks.pinSkipped) {
-    warnings.push("Blank SIM PIN cannot be encrypted - left as-is");
-  }
-  if (checks.kpubReplaced) {
-    warnings.push("Existing server public key will be replaced");
-  }
-  const stale = heartbeatWarning(heartbeatMs, nowMs);
-  if (stale) warnings.push(stale);
 
   return {
-    status: "ready",
+    status: "eligible",
+    eligible,
     reasons: [],
+    partialChanges,
     warnings,
     targetName: deviceJson.cfg_name,
     baselineCrc32: config.meta.crc32,
-    encryptionSummary: summarizeDelta(analysis)
+    currentEncStatus,
+    enc,
+    merged,
+    mergedText
   };
 };

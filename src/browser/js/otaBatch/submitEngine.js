@@ -15,11 +15,8 @@ import { createRequestQueue } from "../requestQueue";
 import { encryptionFields, encryptionCrypto } from "config-editor-tools";
 
 import * as cache from "./cache";
-import {
-  analyzePartial,
-  evaluateDevicePartial,
-  mergeConfig
-} from "./evaluate";
+import { analyzePartial, evaluateDevice, mergeConfig } from "./evaluate";
+import { getEncryptActive } from "./selectors";
 import {
   SUBMIT_CONCURRENCY,
   PUT_NAME_REGEX,
@@ -124,12 +121,7 @@ const submitDevice = async (dispatch, getState, deviceId, token) => {
   const evaluation = state.evaluations[deviceId];
   const validator = cache.getValidator(deviceId);
 
-  if (
-    !deviceJson ||
-    !evaluation ||
-    evaluation.status !== "ready" ||
-    !validator
-  ) {
+  if (!deviceJson || !evaluation || !evaluation.eligible || !validator) {
     throw new Error("Device is no longer ready - re-evaluate");
   }
 
@@ -144,46 +136,60 @@ const submitDevice = async (dispatch, getState, deviceId, token) => {
 
   let mergedText;
 
-  if (state.mode === "partial") {
-    // authoritative re-run of the full evaluation pipeline on the fresh text
-    const analysis = analyzePartial(state.partial, state.partialDeletions);
-    const result = evaluateDevicePartial({
+  // effective encrypt intent is stable during a run (the toggle + selection are
+  // locked while a run is active)
+  const encryptActive =
+    getEncryptActive(getState()) &&
+    evaluation.enc &&
+    evaluation.enc.hasPlain &&
+    evaluation.enc.compatible;
+
+  // authoritative re-run of the evaluation on the FRESH text - re-checks the
+  // partial safety gates AND the post-merge encryption compatibility
+  const analysis = state.partial
+    ? analyzePartial(state.partial, state.partialDeletions)
+    : null;
+  const result = evaluateDevice({
+    deviceId,
+    deviceJson,
+    heartbeatMs: null,
+    nowMs: null,
+    config: {
+      data: { text: freshText, parsed: freshParsed },
+      meta: { status: "loaded", crc32: cache.crc32Hex(freshText) }
+    },
+    schemaStatus: "loaded",
+    validator,
+    partial: state.partial,
+    facts: analysis ? analysis.facts : null
+  });
+  if (result.status === "blocked") {
+    throw new Error(
+      result.reasons && result.reasons[0]
+        ? result.reasons[0]
+        : "Validation failed"
+    );
+  }
+
+  const base = result.merged; // post-merge (or the raw config when no partial)
+  const willEncrypt =
+    encryptActive && result.enc && result.enc.hasPlain && result.enc.compatible;
+
+  if (!result.partialChanges && !willEncrypt) {
+    if (token !== runToken) return; // run was invalidated during the GET
+    setDeviceStatus(
+      dispatch,
       deviceId,
-      deviceJson,
-      heartbeatMs: null,
-      nowMs: null,
-      config: {
-        data: { text: freshText, parsed: freshParsed },
-        meta: { status: "loaded", crc32: cache.crc32Hex(freshText) }
-      },
-      schemaStatus: "loaded",
-      validator,
-      partial: state.partial,
-      facts: analysis.facts
-    });
-    if (result.status === "unchanged") {
-      if (token !== runToken) return; // run was invalidated during the GET
-      setDeviceStatus(
-        dispatch,
-        deviceId,
-        "submitted",
-        "No changes (already applied)"
-      );
-      return;
-    }
-    if (result.status !== "ready") {
-      throw new Error(
-        result.reasons && result.reasons[0]
-          ? result.reasons[0]
-          : "Validation failed"
-      );
-    }
-    mergedText = result.mergedText;
-  } else {
-    // encryption mode: fresh analysis + fresh ephemeral key PER DEVICE -
-    // encrypted values and the server public key are device-specific
-    const analysis = encryptionFields.analyzeConfigEncryption(freshParsed);
-    if (!analysis.ok) {
+      "submitted",
+      "No changes (already applied)"
+    );
+    return;
+  }
+
+  if (willEncrypt) {
+    // fresh analysis + fresh ephemeral key PER DEVICE, on the POST-merge config
+    const encAnalysis = encryptionFields.analyzeConfigEncryption(base);
+    if (!encAnalysis.ok) {
       throw new Error(
         "Config changed on the server and can no longer be encrypted - use Retry failed to re-evaluate"
       );
@@ -192,18 +198,18 @@ const submitDevice = async (dispatch, getState, deviceId, token) => {
       deviceJson.kpub
     );
     const delta = await encryptionFields.buildEncryptedDelta(
-      freshParsed,
+      base,
       material.symmetricKey,
       material.serverPublicKeyBase64,
-      analysis
+      encAnalysis
     );
-    const merged = mergeConfig(freshParsed, delta);
-    if (!validator(merged)) {
-      throw new Error(
-        "Encrypted config fails validation vs the device's schema"
-      );
+    const finalConfig = mergeConfig(base, delta);
+    if (!validator(finalConfig)) {
+      throw new Error("Encrypted config fails validation vs the device's schema");
     }
-    mergedText = JSON.stringify(merged, null, 2);
+    mergedText = JSON.stringify(finalConfig, null, 2);
+  } else {
+    mergedText = result.mergedText;
   }
 
   await putConfig(deviceId, deviceJson.cfg_name, mergedText);

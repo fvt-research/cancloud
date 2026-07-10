@@ -4,8 +4,8 @@ jest.mock("detect-browser", () => ({ detect: () => ({ name: "chrome" }) }));
 
 import {
   analyzePartial,
-  evaluateDevicePartial,
-  evaluateDeviceEncryption
+  evaluateDevice,
+  classifyCurrentEncryption
 } from "../evaluate";
 import * as cache from "../cache";
 
@@ -60,6 +60,14 @@ const baseConfig = () => ({
       }
     }
   }
+});
+
+// a config with no encryptable credential sections at all
+const noCredConfig = () => ({
+  general: { device: { meta: "fleet-x" }, security: { kpub: "" } },
+  log: { file: { split_size: 10, split_time_period: 60, split_time_offset: 0 } },
+  can_1: { phy: { mode: 0 }, transmit: [], filter: { id: [{ name: "f1", state: 1 }] } },
+  can_2: { phy: { mode: 0 }, transmit: [], filter: { id: [{ name: "f1", state: 1 }] } }
 });
 
 const baseDeviceJson = () => ({
@@ -147,14 +155,16 @@ describe("analyzePartial (batch-level gates)", () => {
   });
 });
 
-describe("evaluateDevicePartial", () => {
-  it("ready: valid partial merges, validates, collects warnings", () => {
+describe("evaluateDevice - partial merge", () => {
+  it("eligible + change: valid partial merges, validates, collects warnings", () => {
     // https + port 80 in the merged config triggers the editor's TLS warning
     const input = makeInput({
       partial: { connect: { s3: { server: { endpoint: "https://new-host" } } } }
     });
-    const result = evaluateDevicePartial(input);
-    expect(result.status).toBe("ready");
+    const result = evaluateDevice(input);
+    expect(result.status).toBe("eligible");
+    expect(result.eligible).toBe(true);
+    expect(result.partialChanges).toBe(true);
     expect(result.targetName).toBe("config-01.09.json");
     expect(result.baselineCrc32).toBe(input.config.meta.crc32);
     expect(result.merged.connect.s3.server.endpoint).toBe("https://new-host");
@@ -163,17 +173,20 @@ describe("evaluateDevicePartial", () => {
 
   it("blocked: merged config fails the device's own schema", () => {
     const input = makeInput({ partial: { gnss: { mode: 1 } } });
-    const result = evaluateDevicePartial(input);
+    const result = evaluateDevice(input);
     expect(result.status).toBe("blocked");
     expect(result.reasons[0]).toContain("fails validation");
   });
 
-  it("unchanged: merged text equals the current config text", () => {
+  it("eligible + no change: merged text equals the current config text", () => {
     const input = makeInput({
       partial: { connect: { s3: { server: { port: 80 } } } }
     });
-    const result = evaluateDevicePartial(input);
-    expect(result.status).toBe("unchanged");
+    const result = evaluateDevice(input);
+    expect(result.status).toBe("eligible");
+    expect(result.partialChanges).toBe(false);
+    // still eligible because the plain credentials are encryptable
+    expect(result.eligible).toBe(true);
   });
 
   it("blocked: device.json id does not match the folder", () => {
@@ -181,7 +194,7 @@ describe("evaluateDevicePartial", () => {
       deviceJson: { id: "11223344" },
       partial: { general: { device: { meta: "x" } } }
     });
-    const result = evaluateDevicePartial(input);
+    const result = evaluateDevice(input);
     expect(result.status).toBe("blocked");
     expect(result.reasons[0]).toContain("does not match the folder");
   });
@@ -195,7 +208,7 @@ describe("evaluateDevicePartial", () => {
       },
       partial: { general: { device: { meta: "x" } } }
     });
-    const result = evaluateDevicePartial(input);
+    const result = evaluateDevice(input);
     expect(result.status).toBe("blocked");
     expect(result.reasons[0]).toContain("not supported");
   });
@@ -205,7 +218,7 @@ describe("evaluateDevicePartial", () => {
       deviceJson: { sch_name: "schema-01.08.json" },
       partial: { general: { device: { meta: "x" } } }
     });
-    const result = evaluateDevicePartial(input);
+    const result = evaluateDevice(input);
     expect(result.status).toBe("blocked");
     expect(result.reasons[0]).toContain("inconsistent");
   });
@@ -213,7 +226,7 @@ describe("evaluateDevicePartial", () => {
   it("blocked: config file missing in the folder", () => {
     const input = makeInput({ partial: { general: { device: { meta: "x" } } } });
     input.config = { data: undefined, meta: { status: "missing" } };
-    const result = evaluateDevicePartial(input);
+    const result = evaluateDevice(input);
     expect(result.status).toBe("blocked");
     expect(result.reasons[0]).toContain("not found in the device folder");
   });
@@ -222,7 +235,7 @@ describe("evaluateDevicePartial", () => {
     const input = makeInput({ partial: { general: { device: { meta: "x" } } } });
     input.schemaStatus = "missing";
     input.validator = null;
-    const result = evaluateDevicePartial(input);
+    const result = evaluateDevice(input);
     expect(result.status).toBe("blocked");
     expect(result.reasons[0]).toContain("Rule schema");
   });
@@ -230,10 +243,10 @@ describe("evaluateDevicePartial", () => {
   it("pending while artifacts are loading", () => {
     const input = makeInput({ partial: { general: { device: { meta: "x" } } } });
     input.config = { data: undefined, meta: { status: "loading" } };
-    expect(evaluateDevicePartial(input).status).toBe("pending");
+    expect(evaluateDevice(input).status).toBe("pending");
   });
 
-  it("blocked (D9): plaintext credential over an encrypted section", () => {
+  it("blocked (strict guard): plaintext credential over an encrypted section", () => {
     const config = baseConfig();
     config.general.security.kpub = "B".repeat(88);
     config.connect.wifi.keyformat = 1;
@@ -242,7 +255,7 @@ describe("evaluateDevicePartial", () => {
       config,
       partial: { connect: { wifi: { accesspoint: [{ ssid: "n", pwd: "plain" }] } } }
     });
-    const result = evaluateDevicePartial(input);
+    const result = evaluateDevice(input);
     expect(result.status).toBe("blocked");
     expect(result.reasons[0]).toContain("expects it encrypted");
   });
@@ -255,12 +268,12 @@ describe("evaluateDevicePartial", () => {
       config,
       partial: { connect: { wifi: { keyformat: 0 } } }
     });
-    const result = evaluateDevicePartial(input);
+    const result = evaluateDevice(input);
     expect(result.status).toBe("blocked");
     expect(result.reasons[0]).toContain("does not provide the password value");
   });
 
-  it("allowed: fleet-wide de-encryption with values provided", () => {
+  it("eligible: fleet-wide de-encryption with values provided", () => {
     const config = baseConfig();
     config.general.security.kpub = "B".repeat(88);
     config.connect.wifi.keyformat = 1;
@@ -275,8 +288,9 @@ describe("evaluateDevicePartial", () => {
         }
       }
     });
-    const result = evaluateDevicePartial(input);
-    expect(result.status).toBe("ready");
+    const result = evaluateDevice(input);
+    expect(result.status).toBe("eligible");
+    expect(result.partialChanges).toBe(true);
   });
 
   it("blocked (D14): clearing kpub while encrypted sections remain", () => {
@@ -287,7 +301,7 @@ describe("evaluateDevicePartial", () => {
       config,
       partial: { general: { security: { kpub: "" } } }
     });
-    const result = evaluateDevicePartial(input);
+    const result = evaluateDevice(input);
     expect(result.status).toBe("blocked");
     expect(result.reasons[0]).toContain("could not decrypt");
   });
@@ -300,44 +314,83 @@ describe("evaluateDevicePartial", () => {
       config,
       partial: { connect: { s3: { server: { endpoint: "http://other", port: 9000 } } } }
     });
-    const result = evaluateDevicePartial(input);
-    expect(result.status).toBe("ready");
+    const result = evaluateDevice(input);
+    expect(result.status).toBe("eligible");
+    expect(result.partialChanges).toBe(true);
   });
 });
 
-describe("evaluateDeviceEncryption", () => {
-  it("ready: plain credentials produce an encryption summary", () => {
-    const input = makeInput({});
-    const result = evaluateDeviceEncryption(input);
-    expect(result.status).toBe("ready");
-    expect(result.encryptionSummary.length).toBeGreaterThan(0);
-    expect(result.targetName).toBe("config-01.09.json");
+describe("evaluateDevice - encryption assessment (post-merge)", () => {
+  it("plain credentials: encryptable with a non-empty summary", () => {
+    const result = evaluateDevice(makeInput({}));
+    expect(result.status).toBe("eligible");
+    expect(result.eligible).toBe(true); // encryptable even with no partial
+    expect(result.enc.hasPlain).toBe(true);
+    expect(result.enc.compatible).toBe(true);
+    expect(result.enc.summary.length).toBeGreaterThan(0);
   });
 
-  it("blocked: invalid kpub (validateDeviceFile reused verbatim)", () => {
-    const input = makeInput({ deviceJson: { kpub: "tooshort" } });
-    const result = evaluateDeviceEncryption(input);
-    expect(result.status).toBe("blocked");
-    expect(result.reasons[0]).toContain("kpub");
+  it("invalid kpub: has plaintext but not encrypt-compatible", () => {
+    const result = evaluateDevice(makeInput({ deviceJson: { kpub: "tooshort" } }));
+    expect(result.enc.hasPlain).toBe(true);
+    expect(result.enc.compatible).toBe(false);
+    expect(result.enc.reason).toContain("kpub");
   });
 
-  it("unchanged: all passwords already encrypted", () => {
+  it("all encrypted: nothing to encrypt, not eligible without a partial", () => {
     const config = baseConfig();
     config.general.security.kpub = "B".repeat(88);
     config.connect.wifi.keyformat = 1;
     config.connect.s3.server.keyformat = 1;
-    const input = makeInput({ config });
-    const result = evaluateDeviceEncryption(input);
-    expect(result.status).toBe("unchanged");
+    const result = evaluateDevice(makeInput({ config }));
+    expect(result.enc.hasPlain).toBe(false);
+    expect(result.eligible).toBe(false);
+    expect(result.currentEncStatus).toBe("encrypted");
   });
 
-  it("blocked: mixed plain/encrypted formats", () => {
+  it("mixed formats post-merge: has plaintext but incompatible", () => {
     const config = baseConfig();
     config.general.security.kpub = "B".repeat(88);
     config.connect.wifi.keyformat = 1; // s3 stays plain -> mixed
-    const input = makeInput({ config });
-    const result = evaluateDeviceEncryption(input);
-    expect(result.status).toBe("blocked");
-    expect(result.reasons[0]).toContain("encrypted while others are plain");
+    const result = evaluateDevice(makeInput({ config }));
+    expect(result.enc.hasPlain).toBe(true);
+    expect(result.enc.compatible).toBe(false);
+    expect(result.enc.reason).toContain("encrypted while others are plain");
+    expect(result.currentEncStatus).toBe("mixed");
+  });
+
+  it("a partial can make a mixed device encryptable post-merge", () => {
+    const config = baseConfig();
+    config.general.security.kpub = "B".repeat(88);
+    config.connect.wifi.keyformat = 1; // currently mixed (s3 plain)
+    // partial sets wifi to plain with a value -> post-merge all plain
+    const input = makeInput({
+      config,
+      partial: {
+        connect: { wifi: { keyformat: 0, accesspoint: [{ ssid: "n", pwd: "p" }] } }
+      }
+    });
+    const result = evaluateDevice(input);
+    expect(result.currentEncStatus).toBe("mixed"); // the CURRENT config
+    expect(result.enc.compatible).toBe(true); // the POST-merge config
+    expect(result.enc.hasPlain).toBe(true);
+  });
+});
+
+describe("classifyCurrentEncryption", () => {
+  it("classifies the current config into the four lock states", () => {
+    const plain = baseConfig();
+    expect(classifyCurrentEncryption(plain)).toBe("plain");
+
+    const encrypted = baseConfig();
+    encrypted.connect.wifi.keyformat = 1;
+    encrypted.connect.s3.server.keyformat = 1;
+    expect(classifyCurrentEncryption(encrypted)).toBe("encrypted");
+
+    const mixed = baseConfig();
+    mixed.connect.wifi.keyformat = 1; // s3 stays plain
+    expect(classifyCurrentEncryption(mixed)).toBe("mixed");
+
+    expect(classifyCurrentEncryption(noCredConfig())).toBe("none");
   });
 });

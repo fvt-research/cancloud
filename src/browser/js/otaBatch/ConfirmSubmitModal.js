@@ -3,26 +3,38 @@ import { connect } from "react-redux";
 
 import * as actions from "./actions";
 import CollapsiblePreview from "./CollapsiblePreview";
-import { getAggregatedWarnings } from "./selectors";
+import { getAggregatedWarnings, getEncryptActive } from "./selectors";
 
 // Pre-submission confirmation: the user must see exactly what goes where and
 // explicitly acknowledge before any PUT happens
 export class ConfirmSubmitModal extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { acknowledged: false, previewOpen: false, targetsOpen: false };
+    this.state = {
+      acknowledged: false,
+      verifiedOnOne: false,
+      previewOpen: false,
+      targetsOpen: false,
+      fieldsOpen: false
+    };
   }
 
   componentDidUpdate(prevProps) {
     if (this.props.open && !prevProps.open) {
-      this.setState({ acknowledged: false, previewOpen: false, targetsOpen: false });
+      this.setState({
+        acknowledged: false,
+        verifiedOnOne: false,
+        previewOpen: false,
+        targetsOpen: false,
+        fieldsOpen: false
+      });
     }
   }
 
   render() {
     const {
       open,
-      mode,
+      encryptActive,
       partial,
       partialNotes,
       selected,
@@ -35,23 +47,31 @@ export class ConfirmSubmitModal extends React.Component {
 
     if (!open) return null;
 
+    const willEncrypt = (ev) =>
+      encryptActive && ev && ev.enc && ev.enc.hasPlain && ev.enc.compatible;
+    // only devices that will actually change (partial change and/or encryption)
     const deviceIds = Object.keys(selected)
-      .filter(
-        (deviceId) =>
-          evaluations[deviceId] && evaluations[deviceId].status === "ready"
-      )
+      .filter((deviceId) => {
+        const ev = evaluations[deviceId];
+        return ev && ev.eligible && (ev.partialChanges || willEncrypt(ev));
+      })
       .sort();
 
-    // per-section encryption counts across the selected devices
+    // per-section encryption counts across the devices that will be encrypted
     const encryptionCounts = {};
-    if (mode === "encryption") {
+    if (encryptActive) {
       deviceIds.forEach((deviceId) => {
-        const summary = evaluations[deviceId].encryptionSummary || [];
-        summary.forEach((row) => {
+        const ev = evaluations[deviceId];
+        if (!willEncrypt(ev)) return;
+        (ev.enc.summary || []).forEach((row) => {
           encryptionCounts[row] = (encryptionCounts[row] || 0) + 1;
         });
       });
     }
+
+    // static label (the title already states whether encryption is applied) so
+    // the button width does not jump between modes
+    const submitLabel = "Submit to S3";
 
     return (
       <div className="show modal-custom-wrapper">
@@ -61,11 +81,10 @@ export class ConfirmSubmitModal extends React.Component {
               <span style={{ color: "gray" }}>&times;</span>
             </button>
             <span className="widget-title">
-              {mode === "partial"
-                ? "Submit partial config to " + deviceIds.length + " device" +
-                  (deviceIds.length === 1 ? "" : "s")
-                : "Encrypt & submit to " + deviceIds.length + " device" +
-                  (deviceIds.length === 1 ? "" : "s")}
+              {(encryptActive ? "Encrypt & submit to " : "Submit to ") +
+                deviceIds.length +
+                " device" +
+                (deviceIds.length === 1 ? "" : "s")}
             </span>
           </div>
 
@@ -117,7 +136,7 @@ export class ConfirmSubmitModal extends React.Component {
               ) : null}
             </div>
 
-            {mode === "partial" && partial ? (
+            {partial ? (
               <CollapsiblePreview
                 open={this.state.previewOpen}
                 onToggle={() =>
@@ -128,22 +147,53 @@ export class ConfirmSubmitModal extends React.Component {
               />
             ) : null}
 
-            {mode === "encryption" && Object.keys(encryptionCounts).length ? (
-              <div className="ota-confirm-warnings">
-                <p className="reduced-margin">Fields to encrypt</p>
-                {Object.keys(encryptionCounts).map((row, index) => (
-                  <p className="ota-panel-note" key={"enc" + index}>
-                    {row}{" "}
-                    <span className="grey-text">
-                      ({encryptionCounts[row]} device
-                      {encryptionCounts[row] === 1 ? "" : "s"})
-                    </span>
-                  </p>
-                ))}
-                <p className="field-description">
-                  Each device receives its own unique server public key and
-                  ciphertexts - nothing is shared across devices.
-                </p>
+            {encryptActive && Object.keys(encryptionCounts).length ? (
+              <div style={{ marginTop: "10px" }}>
+                <div
+                  onClick={() =>
+                    this.setState({ fieldsOpen: !this.state.fieldsOpen })
+                  }
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    cursor: "pointer",
+                    fontSize: "12px",
+                    color: "#999999",
+                    userSelect: "none"
+                  }}
+                >
+                  <i
+                    className={
+                      this.state.fieldsOpen
+                        ? "fa fa-angle-down"
+                        : "fa fa-angle-right"
+                    }
+                    style={{ marginRight: "6px", width: "8px" }}
+                  />
+                  Show fields to encrypt ({Object.keys(encryptionCounts).length})
+                </div>
+                {this.state.fieldsOpen ? (
+                  <pre
+                    className="browse-file-preview"
+                    style={{
+                      maxHeight: "200px",
+                      overflow: "auto",
+                      marginTop: "10px"
+                    }}
+                  >
+                    {Object.keys(encryptionCounts)
+                      .map(
+                        (row) =>
+                          row +
+                          "  (" +
+                          encryptionCounts[row] +
+                          " device" +
+                          (encryptionCounts[row] === 1 ? "" : "s") +
+                          ")"
+                      )
+                      .join("\n")}
+                  </pre>
+                ) : null}
               </div>
             ) : null}
 
@@ -175,6 +225,40 @@ export class ConfirmSubmitModal extends React.Component {
             {/* checkbox markup copied from the editor OBD tool: the label wraps
                 only the input + an empty span (the check box), the caption is a
                 flex sibling so it stays vertically centered with the box */}
+            {/* fleet-safety gate: for a multi-device rollout, require the user to
+                confirm they have already validated the update on a single device */}
+            {deviceIds.length > 1 ? (
+              <div
+                className="ota-confirm-ack"
+                onClick={() =>
+                  this.setState({ verifiedOnOne: !this.state.verifiedOnOne })
+                }
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  cursor: "pointer"
+                }}
+              >
+                <span
+                  style={{ width: "20px", flexShrink: 0 }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <label className="checkbox-design">
+                    <input
+                      type="checkbox"
+                      checked={this.state.verifiedOnOne}
+                      onChange={() =>
+                        this.setState({
+                          verifiedOnOne: !this.state.verifiedOnOne
+                        })
+                      }
+                    />
+                    <span></span>
+                  </label>
+                </span>
+                <span>I have already verified this update on 1 device</span>
+              </div>
+            ) : null}
             <div
               className="ota-confirm-ack"
               onClick={() =>
@@ -208,14 +292,18 @@ export class ConfirmSubmitModal extends React.Component {
             <button
               type="button"
               className="btn btn-primary"
-              disabled={!this.state.acknowledged || deviceIds.length === 0}
+              disabled={
+                !this.state.acknowledged ||
+                (deviceIds.length > 1 && !this.state.verifiedOnOne) ||
+                deviceIds.length === 0
+              }
               onClick={startRun}
             >
-              {mode === "partial" ? "Submit to S3" : "Encrypt & submit to S3"}
+              {submitLabel}
             </button>
             <button
               type="button"
-              className="btn btn-white ml15"
+              className="btn btn-white"
               onClick={closeConfirm}
             >
               Cancel
@@ -229,7 +317,7 @@ export class ConfirmSubmitModal extends React.Component {
 
 const mapStateToProps = (state) => ({
   open: state.otaBatch.confirmOpen,
-  mode: state.otaBatch.mode,
+  encryptActive: getEncryptActive(state),
   partial: state.otaBatch.partial,
   partialNotes: state.otaBatch.partialNotes,
   partialSource: state.otaBatch.partialSource,

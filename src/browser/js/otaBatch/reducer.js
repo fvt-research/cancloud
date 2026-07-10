@@ -10,7 +10,7 @@ const initialRun = {
 };
 
 const initialState = {
-  mode: "partial", // "partial" | "encryption"
+  encryptPasswords: false, // encrypt all plain-text passwords in the (post-merge) config
   partial: null, // parsed partial config object
   partialDeletions: [], // excluded deletion paths (editor transfer)
   partialSource: null, // { kind: "file"|"editor", fileName?, deviceId?, configName?, revision? }
@@ -22,7 +22,7 @@ const initialState = {
   devicesLoaded: false,
   artifacts: {}, // deviceId -> { config: {status, crc32}, schema: {status} }
   artifactsRequested: false,
-  evaluations: {}, // deviceId -> { status, reasons, warnings, targetName, baselineCrc32, encryptionSummary? }
+  evaluations: {}, // deviceId -> { status, eligible, reasons, warnings, targetName, baselineCrc32, partialChanges, currentEncStatus, enc }
   evalToken: 0,
   selected: {}, // deviceId -> true
   query: "",
@@ -32,16 +32,10 @@ const initialState = {
 
 export default (state = initialState, action) => {
   switch (action.type) {
-    case actions.SET_MODE:
-      return {
-        ...state,
-        mode: action.mode,
-        selected: {},
-        evaluations: {},
-        query: "",
-        confirmOpen: false,
-        run: initialRun
-      };
+    case actions.SET_ENCRYPT_PASSWORDS:
+      // toggle is a pure display/behaviour switch - eligibility and the loaded
+      // partial are unaffected, so we keep selection/evaluations intact
+      return { ...state, encryptPasswords: action.value };
 
     case actions.SET_DEVICE_DATA: {
       const deviceFiles = {};
@@ -69,7 +63,6 @@ export default (state = initialState, action) => {
     case actions.SET_PARTIAL:
       return {
         ...state,
-        mode: "partial",
         partial: action.partial,
         partialDeletions: action.deletions || [],
         partialSource: action.source || null,
@@ -105,11 +98,12 @@ export default (state = initialState, action) => {
     case actions.SET_EVALUATIONS: {
       // drop stale evaluation waves
       if (action.token !== state.evalToken) return state;
-      // prune selections that are no longer ready
+      // prune selections that are no longer eligible (eligibility is
+      // toggle-independent - a partial change OR encryptable plaintext)
       const selected = {};
       Object.keys(state.selected).forEach((deviceId) => {
         const evaluation = action.evaluations[deviceId];
-        if (evaluation && evaluation.status === "ready") {
+        if (evaluation && evaluation.eligible) {
           selected[deviceId] = true;
         }
       });

@@ -5,12 +5,11 @@ import Files from "react-files";
 import * as actions from "./actions";
 import * as alertActions from "../alert/actions";
 import CollapsiblePreview from "./CollapsiblePreview";
-import { encryptionCrypto } from "config-editor-tools";
 
-// Left widget: the loaded partial config (or the batch-encryption intro).
-// Styled like the encryption editor tool: small status/note/problem rows and
-// a "Loaded: <file> x" chip. Device-specific warnings live in the table and
-// the confirmation modal - only partial-level notes appear here.
+// Top-left widget: the optional partial config loader. Styled like the
+// encryption editor tool: small status/note/problem rows and a
+// "Loaded: <file> x" chip. Device-specific warnings live in the table and the
+// confirmation modal - only partial-level notes appear here.
 export class LeftPanel extends React.Component {
   constructor(props) {
     super(props);
@@ -49,7 +48,7 @@ export class LeftPanel extends React.Component {
     );
   }
 
-  renderPartialPane() {
+  render() {
     const {
       partial,
       partialSource,
@@ -70,17 +69,14 @@ export class LeftPanel extends React.Component {
         : (partialSource && partialSource.fileName) || "partial config";
 
     return (
-      <div>
+      <div className="ota-left-panel">
         <span className="widget-title">Configure devices</span>
         <div className="ota-steps">
-          <p>
-            1. Load a partial Configuration File (or transfer one from the
-            config editor's review modal)
-          </p>
-          <p>2. Select devices to update from the table</p>
-          <p>
-            3. Review and submit (each Configuration File is schema-validated)
-          </p>
+          <ol>
+            <li>Load a full/partial Configuration File (or transfer from editor's review modal)</li>
+            <li>Select devices to update from the table</li>
+            <li>Review and submit</li>
+          </ol>
         </div>
 
         {!loaded ? (
@@ -100,8 +96,8 @@ export class LeftPanel extends React.Component {
             </Files>
           </div>
         ) : (
-          <div className="ota-loaded-chip">
-            <span>Loaded: {sourceLabel}</span>
+          <div className="ota-loaded-chip"><br/>
+            <span><strong>Loaded:</strong> {sourceLabel}</span>
             <button
               type="button"
               className="ota-chip-remove"
@@ -134,36 +130,9 @@ export class LeftPanel extends React.Component {
       </div>
     );
   }
-
-  renderEncryptionPane() {
-    const browserError = encryptionCrypto.checkBrowserSupport();
-    return (
-      <div>
-        <span className="widget-title">Encrypt passwords</span>
-        <div className="ota-status-row" style={{ marginTop: "8px" }}>
-          Encrypt all plain-text passwords in each selected device's
-          Configuration File, using per-device keys derived from its
-          device.json public key.
-        </div>
-        {browserError ? this.renderProblemRow(browserError, "browser") : null}
-      </div>
-    );
-  }
-
-  render() {
-    const { mode } = this.props;
-    return (
-      <div className="ota-left-panel">
-        {mode === "partial"
-          ? this.renderPartialPane()
-          : this.renderEncryptionPane()}
-      </div>
-    );
-  }
 }
 
 const mapStateToProps = (state) => ({
-  mode: state.otaBatch.mode,
   partial: state.otaBatch.partial,
   partialSource: state.otaBatch.partialSource,
   partialBlockers: state.otaBatch.partialBlockers,

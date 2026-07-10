@@ -119,7 +119,7 @@ const DeviceTable = (props) => {
 
   const stringHeader = {
     lastHeartbeat: "Last heartbeat",
-    time_since_heartbeat_min: "Time since heartbeat",
+    time_since_heartbeat_min: "Time since",
     id: "Device ID",
     type: "Type",
     meta: "Config meta",

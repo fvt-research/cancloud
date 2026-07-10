@@ -2,7 +2,7 @@ import React from "react";
 import { connect } from "react-redux";
 
 import * as actions from "./actions";
-import { getCounts } from "./selectors";
+import { getCounts, getEncryptActive } from "./selectors";
 import { encryptionCrypto } from "config-editor-tools";
 
 // Submission controls below the 25/75 layout: submit button, live run
@@ -10,7 +10,7 @@ import { encryptionCrypto } from "config-editor-tools";
 export class RunFooter extends React.Component {
   render() {
     const {
-      mode,
+      encryptActive,
       counts,
       partial,
       partialBlockers,
@@ -21,12 +21,15 @@ export class RunFooter extends React.Component {
     } = this.props;
 
     const browserBlocked =
-      mode === "encryption" && encryptionCrypto.checkBrowserSupport() !== null;
+      encryptActive && encryptionCrypto.checkBrowserSupport() !== null;
+    const hasPartial = partial && partialBlockers.length === 0;
+    // nothing to submit unless there is a valid partial to apply and/or the
+    // encrypt toggle is effectively on
     const submitDisabled =
       run.active ||
       counts.selected === 0 ||
       browserBlocked ||
-      (mode === "partial" && (!partial || partialBlockers.length > 0));
+      (!hasPartial && !encryptActive);
 
     return (
       <div className="ota-run-footer">
@@ -52,11 +55,7 @@ export class RunFooter extends React.Component {
         ) : null}
 
         {!run.active && run.failed > 0 ? (
-          <button
-            type="button"
-            className="btn btn-white"
-            onClick={retryFailed}
-          >
+          <button type="button" className="btn btn-white" onClick={retryFailed}>
             Retry failed
           </button>
         ) : null}
@@ -66,7 +65,7 @@ export class RunFooter extends React.Component {
 }
 
 const mapStateToProps = (state) => ({
-  mode: state.otaBatch.mode,
+  encryptActive: getEncryptActive(state),
   partial: state.otaBatch.partial,
   partialBlockers: state.otaBatch.partialBlockers,
   run: state.otaBatch.run,

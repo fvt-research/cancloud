@@ -7,12 +7,8 @@ import * as alertActions from "../alert/actions";
 import { encryptionFields, encryptionCrypto } from "config-editor-tools";
 
 import * as cache from "./cache";
-import {
-  analyzePartial,
-  evaluateDevicePartial,
-  evaluateDeviceEncryption,
-  mergeConfig
-} from "./evaluate";
+import { analyzePartial, evaluateDevice, mergeConfig } from "./evaluate";
+import { getEncryptActive } from "./selectors";
 import {
   startRun as engineStartRun,
   retryRun as engineRetryRun,
@@ -21,7 +17,7 @@ import {
 } from "./submitEngine";
 import { DEVICE_FOLDER_REGEX, PRESIGN_EXPIRY } from "./constants";
 import {
-  SET_MODE,
+  SET_ENCRYPT_PASSWORDS,
   SET_DEVICE_DATA,
   SET_PARTIAL,
   CLEAR_PARTIAL,
@@ -165,9 +161,10 @@ const fetchArtifactsFor = (dispatch, getState, deviceIds) => {
 export const ensureArtifacts = (force) => {
   return function (dispatch, getState) {
     const state = getState().otaBatch;
-    const needed =
-      state.mode === "encryption" ||
-      (state.partial && !state.partialBlockers.length);
+    // the dashboard + the per-device encryption assessment need the configs
+    // and schemas regardless of whether a partial is loaded; only a broken
+    // partial suppresses evaluation
+    const needed = !(state.partial && state.partialBlockers.length);
 
     if (!needed || !state.devicesLoaded) {
       return Promise.resolve();
@@ -201,13 +198,13 @@ export const evaluateAll = () => {
     const evaluations = {};
     cache.clearMergedResults();
 
-    const partialMode = state.mode === "partial";
-    if (partialMode && (!state.partial || state.partialBlockers.length)) {
+    // a partial is optional; a broken partial suppresses evaluation entirely
+    if (state.partial && state.partialBlockers.length) {
       dispatch({ type: SET_EVALUATIONS, evaluations, token });
       return;
     }
 
-    const analysis = partialMode
+    const analysis = state.partial
       ? analyzePartial(state.partial, state.partialDeletions)
       : null;
     const nowMs = Date.now();
@@ -229,11 +226,10 @@ export const evaluateAll = () => {
         facts: analysis ? analysis.facts : null
       };
 
-      const result = partialMode
-        ? evaluateDevicePartial(input)
-        : evaluateDeviceEncryption(input);
+      const result = evaluateDevice(input);
 
-      // bulky merge results stay in the module cache
+      // bulky merge results (the post-merge base for download/submit) stay in
+      // the module cache
       if (result.merged) {
         cache.setMergedResult(deviceId, {
           merged: result.merged,
@@ -242,11 +238,14 @@ export const evaluateAll = () => {
       }
       evaluations[deviceId] = {
         status: result.status,
+        eligible: result.eligible,
         reasons: result.reasons,
         warnings: result.warnings,
         targetName: result.targetName,
         baselineCrc32: result.baselineCrc32,
-        encryptionSummary: result.encryptionSummary
+        partialChanges: result.partialChanges,
+        currentEncStatus: result.currentEncStatus,
+        enc: result.enc
       };
     });
 
@@ -318,12 +317,12 @@ export const clearPartial = () => {
   };
 };
 
-export const setMode = (mode) => {
+// the encrypt toggle is a pure display/behaviour switch - eligibility and the
+// per-device encryption assessment are already computed, so no re-evaluation
+export const setEncryptPasswords = (value) => {
   return function (dispatch, getState) {
-    const state = getState().otaBatch;
-    if (state.run.active || state.mode === mode) return;
-    dispatch({ type: SET_MODE, mode });
-    return dispatch(ensureArtifacts());
+    if (getState().otaBatch.run.active) return;
+    dispatch({ type: SET_ENCRYPT_PASSWORDS, value });
   };
 };
 
@@ -341,36 +340,52 @@ const downloadJsonFile = (fileName, text) => {
 
 export const downloadNewConfig = (deviceId) => {
   return function (dispatch, getState) {
-    const state = getState().otaBatch;
+    const rootState = getState();
+    const state = rootState.otaBatch;
     const deviceJson = state.deviceFiles[deviceId];
     const fileName =
       deviceId + "_" + (deviceJson ? deviceJson.cfg_name : "config.json");
 
-    if (state.mode === "partial") {
-      const result = cache.getMergedResult(deviceId);
-      if (!result) return Promise.resolve();
-      downloadJsonFile(fileName, result.mergedText);
+    // the post-merge base (partial applied if loaded, else the raw config)
+    const mergedResult = cache.getMergedResult(deviceId);
+    const config = cache.getConfig(deviceId);
+    const base = mergedResult
+      ? mergedResult.merged
+      : config
+      ? config.parsed
+      : null;
+    if (!base) return Promise.resolve();
+
+    const evaluation = state.evaluations[deviceId];
+    const encryptThisDevice =
+      getEncryptActive(rootState) &&
+      evaluation &&
+      evaluation.enc &&
+      evaluation.enc.hasPlain &&
+      evaluation.enc.compatible;
+
+    if (!encryptThisDevice) {
+      downloadJsonFile(fileName, JSON.stringify(base, null, 2));
       return Promise.resolve();
     }
 
-    // encryption mode: build a preview delta on demand for this one device.
-    // The submission later re-encrypts with a fresh ephemeral key (structure
-    // and fields identical, ciphertexts differ)
-    const config = cache.getConfig(deviceId);
-    if (!config || !deviceJson) return Promise.resolve();
-    const analysis = encryptionFields.analyzeConfigEncryption(config.parsed);
+    // encryption preview: build a delta on the POST-merge base with a fresh
+    // ephemeral key. The submission re-encrypts with another fresh key
+    // (structure and fields identical, ciphertexts differ)
+    if (!deviceJson) return Promise.resolve();
+    const analysis = encryptionFields.analyzeConfigEncryption(base);
     return encryptionCrypto
       .deriveEncryptionMaterial(deviceJson.kpub)
       .then(({ serverPublicKeyBase64, symmetricKey }) =>
         encryptionFields.buildEncryptedDelta(
-          config.parsed,
+          base,
           symmetricKey,
           serverPublicKeyBase64,
           analysis
         )
       )
       .then((delta) => {
-        const merged = mergeConfig(config.parsed, delta);
+        const merged = mergeConfig(base, delta);
         downloadJsonFile(fileName, JSON.stringify(merged, null, 2));
       })
       .catch((e) => {
@@ -402,13 +417,25 @@ const refreshSubmitted = (dispatch, getState, deviceIds) => {
   return Promise.resolve();
 };
 
+// a device is submitted only if it will actually change: a partial change
+// and/or (when the encrypt toggle is effectively on) an encryptable device
+const willChange = (evaluation, encryptActive) => {
+  if (!evaluation || !evaluation.eligible) return false;
+  const willEncrypt =
+    encryptActive &&
+    evaluation.enc &&
+    evaluation.enc.hasPlain &&
+    evaluation.enc.compatible;
+  return !!evaluation.partialChanges || !!willEncrypt;
+};
+
 export const startRun = () => {
   return function (dispatch, getState) {
-    const state = getState().otaBatch;
-    const deviceIds = Object.keys(state.selected).filter(
-      (deviceId) =>
-        state.evaluations[deviceId] &&
-        state.evaluations[deviceId].status === "ready"
+    const rootState = getState();
+    const state = rootState.otaBatch;
+    const encryptActive = getEncryptActive(rootState);
+    const deviceIds = Object.keys(state.selected).filter((deviceId) =>
+      willChange(state.evaluations[deviceId], encryptActive)
     );
     if (!deviceIds.length || state.run.active) return;
     engineStartRun(dispatch, getState, deviceIds).then(() =>
@@ -429,13 +456,15 @@ export const retryFailed = () => {
     if (!failed.length) return;
 
     return dispatch(refreshConfigs(failed)).then(() => {
-      const fresh = getState().otaBatch;
+      const rootState = getState();
+      const fresh = rootState.otaBatch;
+      const encryptActive = getEncryptActive(rootState);
       const ready = [];
       failed.forEach((deviceId) => {
         const evaluation = fresh.evaluations[deviceId];
-        if (evaluation && evaluation.status === "ready") {
+        if (willChange(evaluation, encryptActive)) {
           ready.push(deviceId);
-        } else if (evaluation && evaluation.status === "unchanged") {
+        } else if (evaluation && evaluation.status === "eligible") {
           // converged in the meantime (e.g. applied by another session)
           dispatch({
             type: RUN_DEVICE_STATUS,
