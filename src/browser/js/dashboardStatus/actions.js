@@ -132,16 +132,15 @@ export const listLogFiles = devicesFilesInput => {
   };
 };
 
-// probe a session folder with a tiny (max-keys=1) listing, returning its first
-// object ({name, lastModified}) or null for an empty session. Using the session
-// prefix as marker excludes the zero-byte folder marker object itself
+// first object of a session ({name, lastModified}) or null if empty, via a tiny
+// prefix-scoped listing (no arbitrary-key positioning, so Azure gateways work too)
 const probeSessionFirstObject = sessionPrefixName =>
   statusRequestQueue
     .add(() =>
       web.ListObjectsRecursivePage({
         bucketName: "Home",
         prefix: sessionPrefixName,
-        marker: sessionPrefixName,
+        continuationToken: "",
         maxKeys: 1
       })
     )
@@ -210,22 +209,32 @@ export const identifyLogFileMarkers = devicesFiles => {
     }
     let periodStart = getState().dashboardStatus.periodStart;
 
-    // discover all device markers in parallel, then process the log files once
-    Promise.all(
-      devicesFiles.map(device =>
-        findDeviceMarker(device, periodStart).catch(e => ({
-          deviceId: device,
-          marker: "SKIP"
-        }))
+    // probe start-after support (Azure gateways reject it) in parallel with marker
+    // discovery; when unsupported, processLogFiles lists in full instead of skipping
+    Promise.all([
+      web.ProbeStartAfterSupport().then(res => !!res.supported).catch(() => false),
+      Promise.all(
+        devicesFiles.map(device =>
+          findDeviceMarker(device, periodStart).catch(e => ({
+            deviceId: device,
+            marker: "SKIP"
+          }))
+        )
       )
-    ).then(logFileMarkers => {
+    ]).then(([startAfterSupported, logFileMarkers]) => {
+      // log which listing path is used (on Azure the probe above 501s once, expected)
+      console.info(
+        startAfterSupported
+          ? "Status dashboard: S3 start-after supported - using optimal marker-based listing"
+          : "Status dashboard: S3 start-after NOT supported (Azure/Flexify) - falling back to full per-device listing"
+      );
       logFileMarkers.map(logFileMarker => dispatch(addDeviceMarker(logFileMarker)));
-      dispatch(processLogFiles(devicesFiles, logFileMarkers));
+      dispatch(processLogFiles(devicesFiles, logFileMarkers, startAfterSupported));
     });
   };
 };
 
-export const processLogFiles = (devicesFiles, logFileMarkers) => {
+export const processLogFiles = (devicesFiles, logFileMarkers, startAfterSupported = true) => {
   let iCount = 0;
 
   let mf4ObjectsHourAry = [];
@@ -257,11 +266,14 @@ export const processLogFiles = (devicesFiles, logFileMarkers) => {
             dispatch(loadedFiles(true));
           }
         } else {
+          // marker (start-after) skips old sessions; where unsupported (Azure) list
+          // in full - the per-period binning below keeps results correct regardless
+          const effectiveMarker = startAfterSupported ? marker : "";
           web
             .ListObjectsRecursive({
               bucketName: "Home",
               prefix: device + "/",
-              marker: marker
+              marker: effectiveMarker
             })
             .then(data => {
               let validObjects = data.objects.filter(obj => isValidLogfile(obj.name.split(".").slice(-1)[0])); // include only log files

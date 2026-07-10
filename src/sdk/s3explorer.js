@@ -222,26 +222,13 @@ class S3Explorer {
     });
   }
 
-  // list bucket objects from S3 compatible storage
+  // list bucket objects recursively via ListObjects V2 (marker flows in as
+  // `start-after`); V2 keeps Azure-backed gateways (which reject V1 recursive) working
   listObjectsRecursive(bucketName, prefix, marker, cb) {
     var stream;
     let objectNameWithPrefix = bucketName + "/" + prefix;
-    if ("Home" == bucketName) {
-      if(marker == ""){
-        // faster if no marker is available
-        stream = this.s3Client.listObjectsV2(this.bucketName, prefix, true);
-      } else{
-        stream = this.s3Client.listObjects(this.bucketName, prefix, marker, true);
-      }
-
-    } else {
-      stream = this.s3Client.listObjects(
-        this.bucketName,
-        objectNameWithPrefix,
-        marker,
-        true
-      );
-    }
+    let listPrefix = "Home" == bucketName ? prefix : objectNameWithPrefix;
+    stream = this.s3Client.listObjectsV2(this.bucketName, listPrefix, true, marker);
 
     let objectsArray = [];
     let iCount = 0;
@@ -266,18 +253,15 @@ class S3Explorer {
     });
   }
 
-  // list a single page (max 1000 keys) of objects recursively, returning
-  // isTruncated/nextMarker so the caller controls pagination and can stop early.
-  // prefix, marker and the returned nextMarker are all relative to bucketName;
-  // returned object names are full keys (as in listObjectsRecursive)
-  listObjectsRecursivePage(bucketName, prefix, marker, maxKeys, cb) {
+  // one page of a recursive listing, paged by V2 continuation-token (Azure-safe);
+  // returns isTruncated, nextContinuationToken, nextMarker (last key, for boundaries)
+  listObjectsRecursivePage(bucketName, prefix, continuationToken, maxKeys, cb) {
     let bucketPrefix = "Home" == bucketName ? "" : bucketName + "/";
     let updatedPrefix = bucketPrefix + prefix;
-    let updatedMarker = marker ? bucketPrefix + marker : "";
     maxKeys = maxKeys ? maxKeys : 1000;
 
     this.s3Client
-      .listObjectsQuery(this.bucketName, updatedPrefix, updatedMarker, "", maxKeys)
+      .listObjectsV2Query(this.bucketName, updatedPrefix, continuationToken || "", "", maxKeys)
       .on("data", function(result) {
         let objectsArray = result.objects.filter((obj) => obj.name);
         let response = StorageResponses.makeDefaultResponse(
@@ -285,13 +269,32 @@ class S3Explorer {
           objectsArray
         );
         response.result.isTruncated = result.isTruncated;
+        let lastKey = objectsArray.length
+          ? objectsArray[objectsArray.length - 1].name
+          : "";
         response.result.nextMarker = result.isTruncated
-          ? removeFirstOccurence(result.nextMarker, bucketPrefix)
+          ? removeFirstOccurence(lastKey, bucketPrefix)
+          : "";
+        response.result.nextContinuationToken = result.isTruncated
+          ? (result.nextContinuationToken || "")
           : "";
         cb(null, response);
       })
       .on("error", function(err) {
         cb(err);
+      });
+  }
+
+  // probe ListObjects V2 `start-after` support (Azure gateways reject it) so the
+  // dashboard can fall back. Resolves {supported:bool} - never rejects
+  probeStartAfterSupport(cb) {
+    this.s3Client
+      .listObjectsV2Query(this.bucketName, "", "", "", 1, "cancloud-start-after-probe")
+      .on("data", function() {
+        cb(null, StorageResponses.makeDefaultResponse("supported", true));
+      })
+      .on("error", function() {
+        cb(null, StorageResponses.makeDefaultResponse("supported", false));
       });
   }
 
@@ -673,6 +676,9 @@ S3Explorer.prototype.listObjectsRecursive = promisify(
 );
 S3Explorer.prototype.listObjectsRecursivePage = promisify(
   S3Explorer.prototype.listObjectsRecursivePage
+);
+S3Explorer.prototype.probeStartAfterSupport = promisify(
+  S3Explorer.prototype.probeStartAfterSupport
 );
 S3Explorer.prototype.storageInfo = promisify(S3Explorer.prototype.storageInfo);
 S3Explorer.prototype.makeBucket = promisify(S3Explorer.prototype.makeBucket);

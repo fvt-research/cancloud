@@ -114,6 +114,10 @@ class Web {
     return this.makeCall("ListObjectsRecursivePage", args);
   }
 
+  ProbeStartAfterSupport(args) {
+    return this.makeCall("ProbeStartAfterSupport", args);
+  }
+
   PresignedGet(args) {
     return this.makeCall("PresignedGet", args);
   }

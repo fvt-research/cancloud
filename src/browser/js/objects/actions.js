@@ -299,20 +299,14 @@ export const setPrefixWritable = (prefixWritable) => ({
   prefixWritable,
 });
 
-// shared error handler for metadata requests; 'cancelled' rejections come from
-// clearing the request queue on navigation and are not errors
+// meta info is supplementary (object list renders without it), so failures degrade
+// to a console warning, not a red popup; 'cancelled' = queue cleared on navigation
 const handleMetaError = (dispatch, err) => {
   if (err && err.message == "cancelled") {
     return;
   }
   if (web.LoggedIn()) {
-    dispatch(
-      alertActions.set({
-        type: "danger",
-        message: err.message,
-        autoClear: true,
-      })
-    );
+    console.warn("Meta info listing failed:", err && err.message);
   } else {
     history.push("/login");
   }
@@ -336,9 +330,9 @@ export const fetchSessionMetaList = (bucket, prefixList) => {
       return currentBucket == bucket && currentPrefix == "";
     };
 
-    // session folders are lexicographically contiguous; scan from the smallest one
+    // one recursive listing of the device (paged by continuation-token) covers all
+    // sessions; stop once we pass the last visible session (endPrefix)
     const sortedPrefixes = [...sessionPrefixes].sort();
-    const startMarker = sortedPrefixes[0];
     const endPrefix = sortedPrefixes[sortedPrefixes.length - 1];
     const prefixSet = new Set(sortedPrefixes);
 
@@ -428,12 +422,12 @@ export const fetchSessionMetaList = (bucket, prefixList) => {
         });
     };
 
-    const listPage = (marker) => {
+    const listPage = (continuationToken) => {
       return web
         .ListObjectsRecursivePage({
           bucketName: bucket,
           prefix: "",
-          marker: marker,
+          continuationToken: continuationToken,
           maxKeys: 1000,
         })
         .then((res) => {
@@ -456,15 +450,15 @@ export const fetchSessionMetaList = (bucket, prefixList) => {
           });
 
           if (res.isTruncated && !pastEnd) {
-            // sessions strictly before the next marker's session are complete
+            // sessions before the page's last-key session (nextMarker) are complete
             processCompletedSessions(res.nextMarker.split("/")[0] + "/");
-            return listPage(res.nextMarker);
+            return listPage(res.nextContinuationToken);
           }
           processCompletedSessions(null);
         });
     };
 
-    listPage(startMarker).catch((err) => handleMetaError(dispatch, err));
+    listPage("").catch((err) => handleMetaError(dispatch, err));
   };
 };
 
