@@ -58,7 +58,7 @@ export const ObjectsHeader = ({ sortNameOrder, sortSizeOrder, sortLastModifiedOr
 
       <div
         className="fesl-item fesl-item-modified"
-        id="sort-by-last-modified"
+        id="sort-by-start-time"
         onClick={() => sortObjects("last-modified")}
         data-sort="last-modified"
       >

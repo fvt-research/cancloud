@@ -54,71 +54,79 @@ describe("Login", () => {
     expect(document.body.classList.contains("is-guest")).toBeTruthy()
   })
 
-  it("should throw an alert if the keys are empty in login form", () => {
+  it("shows a validation alert for an incomplete login form", () => {
+    // NOTE: synthetic placeholder values only - never real S3 credentials.
+    // handleSubmit builds its message via an override chain, so each case fills
+    // every OTHER field with a valid value to isolate the field under test.
     const wrapper = mount(
-      <Login 
-        dispatch={dispatchMock} 
+      <Login
+        dispatch={dispatchMock}
         alert={{ show: false, type: "danger"}}
         showAlert={showAlertMock}
         clearAlert={clearAlertMock}
       />
     )
-    // case where both keys are empty - displays the second warning
-    wrapper.find("form").simulate("submit")
-    expect(showAlertMock).toHaveBeenCalledWith("danger", "Bucket Name is required")
+    const valid = {
+      accessKey: "test",
+      secretKey: "test",
+      endPoint: "https://example.test",
+      region: "us-east-1",
+      bucketName: "test"
+    }
 
-    // case where access key is empty
-    wrapper.setState({
-      accessKey: "",
-      secretKey: "secretKey",
-      endPoint: "endPoint",
-      bucketName:"bucketName"
-    })
+    // missing access key
+    wrapper.setState({ ...valid, accessKey: "" })
     wrapper.find("form").simulate("submit")
     expect(showAlertMock).toHaveBeenCalledWith("danger", "Access Key cannot be empty")
 
-    // case where secret key is empty
-    wrapper.setState({
-      accessKey: "accessKey",
-      secretKey: "",
-      endPoint: "endPoint",
-      bucketName: "bucketName"
-    })
+    // missing secret key
+    wrapper.setState({ ...valid, secretKey: "" })
+    wrapper.find("form").simulate("submit")
+    expect(showAlertMock).toHaveBeenCalledWith("danger", "Secret Key cannot be empty")
+
+    // missing region
+    wrapper.setState({ ...valid, region: "" })
+    wrapper.find("form").simulate("submit")
+    expect(showAlertMock).toHaveBeenCalledWith("danger", "Region cannot be empty")
+
+    // missing bucket name
+    wrapper.setState({ ...valid, bucketName: "" })
     wrapper.find("form").simulate("submit")
     expect(showAlertMock).toHaveBeenCalledWith("danger", "Bucket Name is required")
 
-    // case where secret key is empty
-    wrapper.setState({
-      accessKey: "accessKey",
-      secretKey: "secretKey",
-      endPoint: "endPoint",
-      bucketName: ""
-    })
+    // endpoint without an http/https prefix
+    wrapper.setState({ ...valid, endPoint: "example.test" })
     wrapper.find("form").simulate("submit")
-    expect(showAlertMock).toHaveBeenCalledWith("danger", "Secret Key cannot be empty")
+    expect(showAlertMock).toHaveBeenCalledWith(
+      "danger",
+      "Please add http:// or https:// in front of your endpoint"
+    )
   })
 
-  it("should call web.Login with correct arguments if both keys are entered", () => {
+  it("should call web.Login with the entered details (incl. region)", () => {
+    // Synthetic placeholder values only - never real S3 credentials.
     const wrapper = mount(
-      <Login 
-        dispatch={dispatchMock} 
+      <Login
+        dispatch={dispatchMock}
         alert={{ show: false, type: "danger"}}
         showAlert={showAlertMock}
         clearAlert={clearAlertMock}
       />
     )
     wrapper.setState({
-      accessKey: "accessKey",
-      secretKey: "secretKey",
-      endPoint: "endPoint",
-      bucketName: "bucketName"
+      accessKey: "test",
+      secretKey: "test",
+      endPoint: "https://example.test",
+      region: "us-east-1",
+      bucketName: "test"
     })
     wrapper.find("form").simulate("submit")
     expect(web.Login).toHaveBeenCalledWith({
-      "accessKey": "accessKey", 
-      "secretKey": "secretKey",
-      "endPoint":"endPoint",
-      bucketName: "bucketName"
+      accessKey: "test",
+      secretKey: "test",
+      endPoint: "https://example.test",
+      region: "us-east-1",
+      bucketName: "test"
     })
   })
 })

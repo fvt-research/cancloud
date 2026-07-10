@@ -70,6 +70,18 @@ Note the following:
 - For some S3 servers (e.g. AWS), you may need to change the CORS config - see the [getting started docs](https://canlogger.csselectronics.com/canedge-getting-started/ce2/transfer-data/s3-server/)  
 
 ---
+### Testing
+
+CANcloud ships a Jest + Enzyme unit-test suite living alongside the source under `src/browser/js/**/__tests__`.
+
+- Run the full suite: `npm test` (or, on Windows, double-click / run `run-tests.bat`)
+- Run a subset by name: `run-tests.bat objects` or `npx jest --runInBand objects`
+
+Notes:
+- Tests run serially (`--runInBand`). On the pinned toolchain (jest 23 / node 16.16.0) parallel workers can contend and produce empty output.
+- The suite is fully client-side: the S3 layer (`web`) is mocked, so no live server or credentials are needed to run the tests.
+
+---
 ### Versioning
 The CANcloud versioning is inspired by the semantic versioning system.
 

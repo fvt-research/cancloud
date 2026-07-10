@@ -1,13 +1,13 @@
 {
   "name": "cancloud",
-  "version": "05.09.17",
+  "version": "06.00.00",
   "description": "A React based S3 browser for use with the CANedge",
   "main": "index.js",
   "scripts": {
     "start": "webpack-dev-server --mode development --open --progress --hot",
     "build": "webpack --mode production",
     "simple": "webpack --config webpack.simple.js --mode production",
-    "test": "jest"
+    "test": "jest --runInBand"
   },
   "keywords": [],
   "author": "CSS Electronics",

@@ -18,53 +18,66 @@ import configureStore from "redux-mock-store"
 import thunk from "redux-thunk"
 import * as actionsCommon from "../actions"
 
-jest.mock("../../web", () => ({
-  StorageInfo: jest.fn(() => {
-    return Promise.resolve({ storageInfo: { Used: 60 } })
-  }),
-  ServerInfo: jest.fn(() => {
-    return Promise.resolve({
-      MinioVersion: "test",
-      MinioMemory: "test",
-      MinioPlatform: "test",
-      MinioRuntime: "test",
-      MinioGlobalInfo: "test"
-    })
-  })
-}))
+// The MinIO StorageInfo/ServerInfo actions were removed when CANcloud dropped the
+// MinIO backend. These tests cover the current "common" (browser) action creators.
 
 const middlewares = [thunk]
 const mockStore = configureStore(middlewares)
 
 describe("Common actions", () => {
-  it("creates common/SET_STORAGE_INFO after fetching the storage details ", () => {
+  it("creates common/TOGGLE_SIDEBAR", () => {
     const store = mockStore()
-    const expectedActions = [
-      { type: "common/SET_STORAGE_INFO", storageInfo: { total:0 , used: 0 } }
-    ]
-    return store.dispatch(actionsCommon.fetchStorageInfo()).then(() => {
-      const actions = store.getActions()
-      expect(actions).toEqual(expectedActions)
-    })
+    store.dispatch(actionsCommon.toggleSidebar())
+    expect(store.getActions()).toEqual([{ type: "common/TOGGLE_SIDEBAR" }])
   })
 
-  it("creates common/SET_SERVER_INFO after fetching the server details", () => {
+  it("creates common/CLOSE_SIDEBAR", () => {
     const store = mockStore()
-    const expectedActions = [
-      {
-        type: "common/SET_SERVER_INFO",
-        serverInfo: {
-          version: "",
-          memory: "",
-          platform: "",
-          runtime: "",
-          info: ""
-        }
-      }
-    ]
-    return store.dispatch(actionsCommon.fetchServerInfo()).then(() => {
-      const actions = store.getActions()
-      expect(actions).toEqual(expectedActions)
-    })
+    store.dispatch(actionsCommon.closeSidebar())
+    expect(store.getActions()).toEqual([{ type: "common/CLOSE_SIDEBAR" }])
+  })
+
+  it("creates common/SET_DEVICE_IMAGE", () => {
+    const store = mockStore()
+    store.dispatch(actionsCommon.setDeviceImage("https://example.test/img.png"))
+    expect(store.getActions()).toEqual([
+      { type: "common/SET_DEVICE_IMAGE", deviceImage: "https://example.test/img.png" }
+    ])
+  })
+
+  it("creates common/SET_DEVICE_FILE_DATA", () => {
+    const store = mockStore()
+    store.dispatch(actionsCommon.setDeviceFileContent({ id: "AABBCCDD" }))
+    expect(store.getActions()).toEqual([
+      { type: "common/SET_DEVICE_FILE_DATA", deviceFileContent: { id: "AABBCCDD" } }
+    ])
+  })
+
+  it("creates common/SET_PREV_DEVICE_FILE_DEVICE", () => {
+    const store = mockStore()
+    store.dispatch(actionsCommon.setPrevDeviceFileDevice("AABBCCDD"))
+    expect(store.getActions()).toEqual([
+      { type: "common/SET_PREV_DEVICE_FILE_DEVICE", prevDeviceFileDevice: "AABBCCDD" }
+    ])
+  })
+
+  it("creates common/SET_DEVICE_FILE_LAST_MODIFIED", () => {
+    const store = mockStore()
+    store.dispatch(actionsCommon.setDeviceFileLastModified("January 1st 2026"))
+    expect(store.getActions()).toEqual([
+      { type: "common/SET_DEVICE_FILE_LAST_MODIFIED", deviceFileLastModified: "January 1st 2026" }
+    ])
+  })
+
+  it("creates common/OPEN_DEVICE_FILE_TABLE", () => {
+    const store = mockStore()
+    store.dispatch(actionsCommon.openDeviceFileTable())
+    expect(store.getActions()).toEqual([{ type: "common/OPEN_DEVICE_FILE_TABLE" }])
+  })
+
+  it("creates common/TOGGLE_DEVICE_FILE_TABLE", () => {
+    const store = mockStore()
+    store.dispatch(actionsCommon.toggleDeviceFileTable())
+    expect(store.getActions()).toEqual([{ type: "common/TOGGLE_DEVICE_FILE_TABLE" }])
   })
 })

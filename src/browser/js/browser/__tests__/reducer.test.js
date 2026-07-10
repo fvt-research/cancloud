@@ -19,7 +19,15 @@ import * as actionsCommon from "../actions"
 
 describe("common reducer", () => {
   it("should return the initial state", () => {
-    expect(reducer(undefined, {})).toEqual({"objectName": "", "serverConfig": {}, "serverConfigModDate": "", "serverImage": [], "serverInfo": {}, "sidebarOpen": false, "storageInfo": {"free": 0, "total": 0}})
+    expect(reducer(undefined, {})).toEqual({
+      sidebarOpen: false,
+      objectName: "",
+      deviceImage: undefined,
+      prevDeviceFileDevice: "",
+      deviceFileContent: {},
+      deviceFileLastModified: "",
+      deviceFileTableOpen: false
+    })
   })
 
   it("should handle TOGGLE_SIDEBAR", () => {
@@ -35,38 +43,32 @@ describe("common reducer", () => {
     })
   })
 
-  it("should handle SET_STORAGE_INFO", () => {
-    expect(
-      reducer(
-        {},
-        {
-          type: actionsCommon.SET_STORAGE_INFO,
-          storageInfo: { total: 100, free: 40 }
-        }
-      )
-    ).toEqual({
-      storageInfo: { total: 100, free: 40 }
-    })
-  })
-
-  it("should handle SET_SERVER_INFO", () => {
+  it("should handle SET_DEVICE_IMAGE", () => {
     expect(
       reducer(undefined, {
-        type: actionsCommon.SET_SERVER_INFO,
-        serverInfo: {
-          version: "test",
-          memory: "test",
-          platform: "test",
-          runtime: "test",
-          info: "test"
+        type: actionsCommon.SET_DEVICE_IMAGE,
+        deviceImage: "https://example.test/img.png"
+      }).deviceImage
+    ).toEqual("https://example.test/img.png")
+  })
+
+  it("should handle SET_DEVICE_FILE_DATA", () => {
+    expect(
+      reducer(undefined, {
+        type: actionsCommon.SET_DEVICE_FILE_DATA,
+        deviceFileContent: { id: "AABBCCDD" }
+      }).deviceFileContent
+    ).toEqual({ id: "AABBCCDD" })
+  })
+
+  it("should handle TOGGLE_DEVICE_FILE_TABLE", () => {
+    expect(
+      reducer(
+        { deviceFileTableOpen: false },
+        {
+          type: actionsCommon.TOGGLE_DEVICE_FILE_TABLE
         }
-      }).serverInfo
-    ).toEqual({
-      version: "test",
-      memory: "test",
-      platform: "test",
-      runtime: "test",
-      info: "test"
-    })
+      ).deviceFileTableOpen
+    ).toBe(true)
   })
 })

@@ -66,6 +66,24 @@ describe("ObjectActions", () => {
     expect(deleteObject).toHaveBeenCalledWith("obj1")
   })
 
+  it("should call previewObject when preview action is clicked", () => {
+    const previewObject = jest.fn()
+    const object = { name: "obj1" }
+    const wrapper = shallow(
+      <ObjectActions
+        object={object}
+        currentPrefix={"pre1/"}
+        previewObject={previewObject}
+      />
+    )
+    // preview (fa-eye) is now the first dropdown action
+    wrapper
+      .find("a")
+      .first()
+      .simulate("click", { preventDefault: jest.fn() })
+    expect(previewObject).toHaveBeenCalledWith(object)
+  })
+
   it("should call shareObject with object and expiry", () => {
     const shareObject = jest.fn()
     const wrapper = shallow(
@@ -75,9 +93,10 @@ describe("ObjectActions", () => {
         shareObject={shareObject}
       />
     )
+    // share (fa-copy) is the second action, after preview
     wrapper
       .find("a")
-      .first()
+      .at(1)
       .simulate("click", { preventDefault: jest.fn() })
     expect(shareObject).toHaveBeenCalledWith("obj1", 5, 0, 0)
   })

@@ -126,7 +126,8 @@ describe("Objects actions", () => {
     const expectedActions = [
       {
         type: "objects/APPEND_LIST",
-        objects: [{ name: "test1" }, { name: "test2" }],
+        // fetchObjects reverse-sorts by name (latest session folders on top)
+        objects: [{ name: "test2" }, { name: "test1" }],
         marker: "test2",
         isTruncated: false,
         err:false
@@ -187,8 +188,17 @@ describe("Objects actions", () => {
       buckets: { currentBucket: "test" },
       objects: { currentPrefix: "pre1/" }
     })
-    const expectedActions = [{ type: "objects/REMOVE", object: "obj1" }]
-    store.dispatch(actionsObjects.deleteObject("obj1")).then(() => {
+    // deleteObject wraps the removal in the progress-modal queue, so it now
+    // dispatches ADD_QUEUE -> UPDATE_QUEUE -> REMOVE -> STOP_QUEUE.
+    // NOTE: the promise MUST be returned - otherwise a failing assertion here
+    // becomes an unhandled rejection that crashes the whole jest worker.
+    const expectedActions = [
+      { type: "alertModals/ADD_QUEUE", modal: "DELETE", slug: "pre1/obj1", size: 100, name: "pre1/obj1" },
+      { type: "alertModal/UPDATE_QUEUE", slug: "pre1/obj1", loaded: 100 },
+      { type: "objects/REMOVE", object: "obj1" },
+      { type: "alertModals/STOP_QUEUE", slug: "pre1/obj1" }
+    ]
+    return store.dispatch(actionsObjects.deleteObject("obj1")).then(() => {
       const actions = store.getActions()
       expect(actions).toEqual(expectedActions)
     })
