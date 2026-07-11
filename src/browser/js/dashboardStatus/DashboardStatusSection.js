@@ -414,6 +414,7 @@ class DashboardStatusSection extends React.Component {
                               chartDataArray[2] ? chartDataArray[2] : []
                             }
                             deviceCrc32Test={chartDataDevicesArray[2]}
+                            deviceEncStatus={this.props.deviceEncStatus}
                             height={tableHeight}
                             deviceLastMf4MetaData={deviceLastMf4MetaData}
                           />
@@ -473,6 +474,7 @@ const mapStateToProps = state => {
     deviceFileObjects: state.dashboardStatus.deviceFileObjects,
     configFileCrc32: state.dashboardStatus.configFileCrc32,
     configFileContents: state.dashboardStatus.configFileContents,
+    deviceEncStatus: state.dashboardStatus.deviceEncStatus,
     loadedFiles: state.dashboardStatus.loadedFiles,
     loadedDevice: state.dashboardStatus.loadedDevice,
     loadedConfig: state.dashboardStatus.loadedConfig,

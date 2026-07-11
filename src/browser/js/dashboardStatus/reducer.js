@@ -20,6 +20,7 @@ export default (
     configObjectsUnique: [],
     configFileContents: [],
     configFileCrc32: [],
+    deviceEncStatus: [],
     loadedFiles: false,
     loadedConfig: false,
     loadedDevice: false,
@@ -36,6 +37,7 @@ export default (
         configObjectsUnique: [],
         configFileContents: [],
         configFileCrc32: [],
+        deviceEncStatus: [],
         loadedConfig: false,
         loadedDevice: false
       };
@@ -113,6 +115,11 @@ export default (
       return {
         ...state,
         configFileCrc32: action.configFileCrc32
+      };
+    case dashboardStatusActions.SET_DEVICE_ENC_STATUS:
+      return {
+        ...state,
+        deviceEncStatus: action.deviceEncStatus
       };
     case dashboardStatusActions.DEVICE_FILE_CONTENT:
       return {

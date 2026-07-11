@@ -10,6 +10,9 @@
 import { editorActions } from "config-editor-base";
 import { encryptionFields } from "config-editor-tools";
 import { SUPPORTED_REVISIONS, STALE_HEARTBEAT_MS } from "./constants";
+import { classifyCurrentEncryption } from "../encryptionLock";
+
+export { classifyCurrentEncryption };
 
 const merge = require("deepmerge");
 
@@ -309,18 +312,6 @@ const heartbeatWarning = (heartbeatMs, nowMs) => {
 
 // -------------------------------------------------------------------------
 // per-device encryption assessment (always on the POST-merge config)
-
-// classify the CURRENT (raw, pre-merge) device config for the Sec column:
-// "none" (no credential sections) / "encrypted" (all encrypted) /
-// "plain" (all plain) / "mixed" (some encrypted, some plain)
-export const classifyCurrentEncryption = (config) => {
-  const sections = encryptionFields.analyzeConfigEncryption(config).sections;
-  if (!sections.length) return "none";
-  const encrypted = sections.filter((s) => s.keyformat === 1).length;
-  if (encrypted === 0) return "plain";
-  if (encrypted === sections.length) return "encrypted";
-  return "mixed";
-};
 
 // whether the POST-merge config can be encrypted, plus the per-field summary
 // and encryption-specific warnings. Reuses the single-device building blocks.

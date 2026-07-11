@@ -1,6 +1,7 @@
 import React from "react";
 import Moment from "moment";
 import { canedgeTypeName } from "../utils";
+import { renderEncryptionLock } from "../encryptionLock";
 
 const DeviceTable = (props) => {
   const {
@@ -8,6 +9,7 @@ const DeviceTable = (props) => {
     deviceFileContents,
     mf4ObjectsFiltered,
     deviceCrc32Test,
+    deviceEncStatus,
     height,
     deviceLastMf4MetaData,
   } = props;
@@ -46,6 +48,11 @@ const DeviceTable = (props) => {
   // construct object containing all relevant table data based on sorted device ID list
 
   deviceIdListDeltaSort.sort((a, b) => (a.deviceId < b.deviceId) ? -1 : 1)
+
+  const encByDevice = {};
+  (deviceEncStatus || []).forEach((e) => {
+    if (e) encByDevice[e.deviceId] = e.status;
+  });
 
   const tableData = deviceIdListDeltaSort.map((e) => {
     // extract the device.json content related to the device
@@ -104,6 +111,7 @@ const DeviceTable = (props) => {
       id,
       type,
       meta,
+      sec: encByDevice[id] || null,
       lastHeartbeat,
       time_since_heartbeat_min,
       storageUsed,
@@ -123,6 +131,7 @@ const DeviceTable = (props) => {
     id: "Device ID",
     type: "Type",
     meta: "Config meta",
+    sec: "Sec",
     fwVer: "Firmware",
     uploadedMb: "MB uploaded",
     storageUsed: "SD storage used",
@@ -149,7 +158,9 @@ const DeviceTable = (props) => {
         {Object.entries(e).map(([key, v], index) => {
           return (
             <td key={"tableCell " + index}>
-              {key == "time_since_heartbeat_min" ? (
+              {key == "sec" ? (
+                renderEncryptionLock(v)
+              ) : key == "time_since_heartbeat_min" ? (
                 <ul className="chart">
                   <li>
                     <span

@@ -10,32 +10,7 @@ import {
   getMasterChecked
 } from "./selectors";
 import { RENDER_CAP } from "./constants";
-
-// current-config encryption state -> colored lock (Sec column)
-const LOCK_TITLES = {
-  encrypted: "All passwords are currently encrypted",
-  plain: "No passwords are encrypted (all plain-text)",
-  mixed: "Mixed - some passwords encrypted, some plain-text",
-  none: "No passwords in this Configuration File"
-};
-// open padlock for the all-plain case, closed for encrypted/mixed
-const LOCK_ICON = {
-  encrypted: "fa-lock",
-  plain: "fa-unlock",
-  mixed: "fa-lock",
-  none: "fa-lock"
-};
-const renderLock = (status) => {
-  if (!status) return null;
-  return (
-    <i
-      className={
-        "fa " + (LOCK_ICON[status] || "fa-lock") + " ota-lock ota-lock-" + status
-      }
-      title={LOCK_TITLES[status] || ""}
-    />
-  );
-};
+import { renderEncryptionLock } from "../encryptionLock";
 
 const formatAge = (min) =>
   min < 60
@@ -201,7 +176,9 @@ class DeviceRow extends React.PureComponent {
         <td>{row.id}</td>
         <td>{row.type}</td>
         <td title={row.meta}>{row.meta}</td>
-        <td className="ota-sec-cell">{renderLock(row.currentEncStatus)}</td>
+        <td className="ota-sec-cell">
+          {renderEncryptionLock(row.currentEncStatus)}
+        </td>
         <td>{heartbeat ? heartbeat.format("YY-MM-DD HH:mm") : ""}</td>
         <td>{this.renderAgeBar()}</td>
         <td>{row.fwVer}</td>

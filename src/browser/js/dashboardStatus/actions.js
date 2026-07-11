@@ -6,6 +6,7 @@ import { demoMode } from "../utils";
 import load from "jszip/lib/load";
 import { isValidLogfile } from "../utils";
 import { statusRequestQueue } from "../requestQueue";
+import { classifyCurrentEncryption } from "../encryptionLock";
 
 export const SET_PERIODSTART_BACK = "dashboardStatus/SET_PERIODSTART_BACK";
 export const SET_OBJECTS_DATA = "dashboardStatus/SET_OBJECTS_DATA";
@@ -17,6 +18,7 @@ export const SET_DEVICE_FILE_OBJECT = "dashboardStatus/SET_DEVICE_FILE_OBJECT";
 export const SET_CONFIG_OBJECTS = "dashboardStatus/SET_CONFIG_OBJECTS";
 export const CONFIG_FILE_CONTENT = "dashboardStatus/CONFIG_FILE_CONTENT";
 export const SET_CONFIG_FILE_CRC32 = "dashboardStatus/SET_CONFIG_FILE_CRC32";
+export const SET_DEVICE_ENC_STATUS = "dashboardStatus/SET_DEVICE_ENC_STATUS";
 export const SET_UPLOADED_SIZE_TOTAL =
   "dashboardStatus/SET_UPLOADED_SIZE_TOTAL";
 export const LOADED_FILES = "dashboardStatus/LOADED_FILES";
@@ -480,16 +482,23 @@ export const fetchConfigFileContentAll = configObjectsUnique => {
           })
           .then(res => statusRequestQueue.add(() => fetch(res.url)))
           .then(r => r.text())
-          .then(data => ({
-            content: JSON.parse(data),
-            crc32: {
-              deviceId: configObject.deviceId,
-              crc32: crc32(data)
-                .toString(16)
-                .toUpperCase()
-                .padStart(8, "0")
-            }
-          }))
+          .then(data => {
+            const content = JSON.parse(data);
+            return {
+              content,
+              crc32: {
+                deviceId: configObject.deviceId,
+                crc32: crc32(data)
+                  .toString(16)
+                  .toUpperCase()
+                  .padStart(8, "0")
+              },
+              enc: {
+                deviceId: configObject.deviceId,
+                status: classifyCurrentEncryption(content)
+              }
+            };
+          })
           .catch(e => {
             console.log("No valid config found");
             return {
@@ -497,13 +506,15 @@ export const fetchConfigFileContentAll = configObjectsUnique => {
               crc32: {
                 deviceId: configObject.deviceId,
                 crc32: "NA"
-              }
+              },
+              enc: { deviceId: configObject.deviceId, status: null }
             };
           })
       )
     ).then(results => {
       dispatch(configFileContent(results.map(result => result.content)));
       dispatch(setConfigFileCrc32(results.map(result => result.crc32)));
+      dispatch(setDeviceEncStatus(results.map(result => result.enc)));
     });
   };
 };
@@ -569,6 +580,11 @@ export const configFileContent = configFileContents => ({
 export const setConfigFileCrc32 = configFileCrc32 => ({
   type: SET_CONFIG_FILE_CRC32,
   configFileCrc32
+});
+
+export const setDeviceEncStatus = deviceEncStatus => ({
+  type: SET_DEVICE_ENC_STATUS,
+  deviceEncStatus
 });
 
 export const setDeviceFileObjects = deviceFileObjects => ({
