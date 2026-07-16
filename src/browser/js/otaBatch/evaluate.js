@@ -482,6 +482,36 @@ export const firmwareGate = (deviceJson, firmware) => {
 };
 
 // -------------------------------------------------------------------------
+// per-device TLS-certificate gate (TLS run only). The .p7b is deployed to any
+// CANedge type, but only devices on a firmware revision this tool has been
+// verified against (safety precaution mirroring the firmware/config gates).
+// Returns { reason } -> blocked, or { willUpdate: true }.
+const REV_FROM_FW_VER = /^(\d{2}\.\d{2})\.\d{2}$/;
+
+export const tlsGate = (deviceJson) => {
+  const match = REV_FROM_FW_VER.exec(deviceJson.fw_ver || "");
+  if (!match) {
+    return {
+      reason:
+        "Device has not reported a valid firmware version (fw_ver: " +
+        (deviceJson.fw_ver || "missing") +
+        ")"
+    };
+  }
+  if (!SUPPORTED_REVISIONS.includes(match[1])) {
+    return {
+      reason:
+        "Firmware " +
+        match[1] +
+        " is not supported for TLS certificate updates (supported: " +
+        SUPPORTED_REVISIONS.join(", ") +
+        ")"
+    };
+  }
+  return { willUpdate: true };
+};
+
+// -------------------------------------------------------------------------
 // unified per-device evaluation
 //
 // A partial is optional. The result carries BOTH the partial-merge outcome and
@@ -504,7 +534,8 @@ export const evaluateDevice = (input) => {
     validator,
     partial,
     facts,
-    firmware
+    firmware,
+    tls
   } = input;
 
   const base = deviceBaseGates(input);
@@ -633,6 +664,35 @@ export const evaluateDevice = (input) => {
         toRevision: gate.toRevision,
         targetConfigName: gate.targetConfigName
       }
+    };
+  }
+
+  // TLS run: a pure binary upload - no config change, so no merge/validation
+  // beyond the base gates and the firmware-revision safety gate
+  if (tls) {
+    const gate = tlsGate(deviceJson);
+    if (gate.reason) {
+      return {
+        status: "blocked",
+        eligible: false,
+        reasons: [gate.reason],
+        warnings: [],
+        currentEncStatus
+      };
+    }
+    const tlsWarnings = [];
+    const tlsStale = heartbeatWarning(heartbeatMs, nowMs);
+    if (tlsStale) tlsWarnings.push(tlsStale);
+    return {
+      status: "eligible",
+      eligible: true,
+      reasons: [],
+      partialChanges: false,
+      warnings: tlsWarnings,
+      targetName: deviceJson.cfg_name,
+      baselineCrc32: config.meta.crc32,
+      currentEncStatus,
+      tls: { willUpdate: true }
     };
   }
 

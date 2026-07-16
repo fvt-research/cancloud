@@ -16,8 +16,9 @@ const initialState = {
   partialSource: null, // { kind: "file"|"editor", fileName?, deviceId?, configName?, revision? }
   partialBlockers: [], // batch-level blocking errors
   partialNotes: [], // batch-level non-blocking notes
-  activeTab: "config", // "config" | "fw" - mutually exclusive left-panel modes
+  activeTab: "config", // "config" | "fw" | "tls" - mutually exclusive left-panel modes
   loadedFirmware: null, // { fileName, deviceType, fwVer, revision } (bytes/schema in cache.js)
+  loadedTls: null, // { fileName, size } (raw File in cache.js)
   devices: [], // all device folder ids (sorted)
   deviceFiles: {}, // deviceId -> parsed device.json | null (missing/unreadable)
   heartbeats: {}, // deviceId -> ms epoch of device.json Last-Modified
@@ -70,7 +71,8 @@ export default (state = initialState, action) => {
         partialSource: action.source || null,
         partialBlockers: action.blockers || [],
         partialNotes: action.notes || [],
-        loadedFirmware: null, // mutually exclusive with the firmware flow
+        loadedFirmware: null, // mutually exclusive with the firmware/TLS flows
+        loadedTls: null,
         activeTab: "config",
         selected: {},
         evaluations: {},
@@ -146,6 +148,7 @@ export default (state = initialState, action) => {
       return {
         ...state,
         loadedFirmware: action.firmware,
+        loadedTls: null,
         activeTab: "fw",
         partial: null,
         partialDeletions: [],
@@ -164,6 +167,37 @@ export default (state = initialState, action) => {
       return {
         ...state,
         loadedFirmware: null,
+        selected: {},
+        evaluations: {},
+        confirmOpen: false,
+        run: initialRun
+      };
+
+    case actions.SET_TLS:
+      // loading a certs_server.p7b is mutually exclusive with the config and
+      // firmware flows (mirrors SET_FIRMWARE). The raw File lives in cache.js.
+      return {
+        ...state,
+        loadedTls: action.tls,
+        loadedFirmware: null,
+        activeTab: "tls",
+        partial: null,
+        partialDeletions: [],
+        partialSource: null,
+        partialBlockers: [],
+        partialNotes: [],
+        encryptPasswords: false,
+        selected: {},
+        evaluations: {},
+        query: "",
+        confirmOpen: false,
+        run: initialRun
+      };
+
+    case actions.CLEAR_TLS:
+      return {
+        ...state,
+        loadedTls: null,
         selected: {},
         evaluations: {},
         confirmOpen: false,

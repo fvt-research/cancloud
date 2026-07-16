@@ -6,6 +6,7 @@ import * as actions from "./actions";
 import LeftPanel from "./LeftPanel";
 import EncryptPanel from "./EncryptPanel";
 import FwPanel from "./FwPanel";
+import TlsPanel from "./TlsPanel";
 import OtaDeviceTable from "./OtaDeviceTable";
 import RunFooter from "./RunFooter";
 import ConfirmSubmitModal from "./ConfirmSubmitModal";
@@ -45,6 +46,7 @@ export class OtaBatchSection extends React.Component {
       devicesLoaded,
       activeTab,
       loadedFirmware,
+      loadedTls,
       partial,
       encryptPasswords,
       runActive,
@@ -80,25 +82,37 @@ export class OtaBatchSection extends React.Component {
                     "ota-tab" +
                     (activeTab === "config" ? " ota-tab-active" : "")
                   }
-                  disabled={runActive || !!loadedFirmware}
+                  disabled={runActive || !!loadedFirmware || !!loadedTls}
                   onClick={() => setActiveTab("config")}
                 >
-                  Update config
+                  Config
                 </button>
                 <button
                   type="button"
                   className={
                     "ota-tab" + (activeTab === "fw" ? " ota-tab-active" : "")
                   }
-                  disabled={runActive || hasConfigState}
+                  disabled={runActive || hasConfigState || !!loadedTls}
                   onClick={() => setActiveTab("fw")}
                 >
-                  Update FW
+                  Firmware
+                </button>
+                <button
+                  type="button"
+                  className={
+                    "ota-tab" + (activeTab === "tls" ? " ota-tab-active" : "")
+                  }
+                  disabled={runActive || hasConfigState || !!loadedFirmware}
+                  onClick={() => setActiveTab("tls")}
+                >
+                  TLS
                 </button>
               </div>
               <div className="ota-tab-body">
                 {activeTab === "fw" ? (
                   <FwPanel />
+                ) : activeTab === "tls" ? (
+                  <TlsPanel />
                 ) : (
                   <div>
                     <LeftPanel />
@@ -132,6 +146,7 @@ const mapStateToProps = (state) => ({
   devicesLoaded: state.otaBatch.devicesLoaded,
   activeTab: state.otaBatch.activeTab,
   loadedFirmware: state.otaBatch.loadedFirmware,
+  loadedTls: state.otaBatch.loadedTls,
   partial: state.otaBatch.partial,
   encryptPasswords: state.otaBatch.encryptPasswords,
   runActive: state.otaBatch.run.active

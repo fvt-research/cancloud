@@ -236,6 +236,54 @@ describe("otaBatch reducer - full resets", () => {
   });
 });
 
+describe("otaBatch reducer - TLS load/clear + three-way mutual exclusion", () => {
+  const tls = { fileName: "certs_server.p7b", size: 4096 };
+  const fw = { fileName: "firmware.bin", deviceType: "CANedge2", fwVer: "01.09.05", revision: "01.09" };
+
+  it("SET_TLS clears the partial, encrypt toggle and firmware, and activates the tls tab", () => {
+    const dirty = apply(init(), [
+      { type: actions.SET_PARTIAL, partial: { a: 1 } },
+      { type: actions.SET_ENCRYPT_PASSWORDS, value: true },
+      { type: actions.SET_FIRMWARE, firmware: fw },
+      { type: actions.SET_SELECTION, selected: { A: true } },
+      { type: actions.SET_QUERY, query: "abc" }
+    ]);
+    const s = reducer(dirty, { type: actions.SET_TLS, tls });
+    expect(s.loadedTls).toEqual(tls);
+    expect(s.activeTab).toBe("tls");
+    expect(s.partial).toBeNull();
+    expect(s.encryptPasswords).toBe(false);
+    expect(s.loadedFirmware).toBeNull();
+    expect(s.selected).toEqual({});
+    expect(s.evaluations).toEqual({});
+    expect(s.query).toBe("");
+    expect(s.run.active).toBe(false);
+  });
+
+  it("SET_PARTIAL and SET_FIRMWARE both clear a loaded TLS bundle", () => {
+    const withTls = reducer(init(), { type: actions.SET_TLS, tls });
+    const p = reducer(withTls, { type: actions.SET_PARTIAL, partial: { a: 1 } });
+    expect(p.loadedTls).toBeNull();
+    expect(p.activeTab).toBe("config");
+    const f = reducer(withTls, { type: actions.SET_FIRMWARE, firmware: fw });
+    expect(f.loadedTls).toBeNull();
+    expect(f.activeTab).toBe("fw");
+  });
+
+  it("CLEAR_TLS drops the bundle and resets selection/evaluations, keeping devices", () => {
+    const seeded = apply(init(), [
+      { type: actions.SET_DEVICE_DATA, devices: ["A"], results: [{ deviceId: "A", content: { id: "A" } }] },
+      { type: actions.SET_TLS, tls },
+      { type: actions.SET_SELECTION, selected: { A: true } }
+    ]);
+    const s = reducer(seeded, { type: actions.CLEAR_TLS });
+    expect(s.loadedTls).toBeNull();
+    expect(s.selected).toEqual({});
+    expect(s.evaluations).toEqual({});
+    expect(s.devices).toEqual(["A"]);
+  });
+});
+
 describe("otaBatch reducer - RUN_DEVICE_STATUS counter edges", () => {
   it("does not count non-terminal transitions", () => {
     const s = apply(init(), [

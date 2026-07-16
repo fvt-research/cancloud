@@ -23,7 +23,9 @@ import {
 import {
   DEVICE_FOLDER_REGEX,
   PRESIGN_EXPIRY,
-  SUPPORTED_REVISIONS
+  SUPPORTED_REVISIONS,
+  TLS_FILE_NAME,
+  TLS_MAX_FILE_SIZE
 } from "./constants";
 import {
   SET_ENCRYPT_PASSWORDS,
@@ -41,6 +43,8 @@ import {
   SET_ACTIVE_TAB,
   SET_FIRMWARE,
   CLEAR_FIRMWARE,
+  SET_TLS,
+  CLEAR_TLS,
   RUN_ABORT_REQUESTED,
   RUN_DEVICE_STATUS,
   RESET
@@ -220,6 +224,7 @@ export const evaluateAll = () => {
       ? analyzePartial(state.partial, state.partialDeletions)
       : null;
     const firmware = state.loadedFirmware ? cache.getFirmware() : null;
+    const tls = state.loadedTls ? cache.getTls() : null;
     const nowMs = Date.now();
 
     state.devices.forEach((deviceId) => {
@@ -237,7 +242,8 @@ export const evaluateAll = () => {
         validator: cache.getValidator(deviceId),
         partial: state.partial,
         facts: analysis ? analysis.facts : null,
-        firmware
+        firmware,
+        tls
       };
 
       const result = evaluateDevice(input);
@@ -260,7 +266,8 @@ export const evaluateAll = () => {
         partialChanges: result.partialChanges,
         currentEncStatus: result.currentEncStatus,
         enc: result.enc,
-        fw: result.fw
+        fw: result.fw,
+        tls: result.tls
       };
     });
 
@@ -286,8 +293,9 @@ export const loadPartialFile = (fileName, rawText) => {
       blockers = analysis.blockers;
       notes = analysis.notes;
     }
-    // SET_PARTIAL clears loadedFirmware in redux; drop the bulky cached File too
+    // SET_PARTIAL clears loadedFirmware/loadedTls in redux; drop the cached Files too
     cache.clearFirmware();
+    cache.clearTls();
     dispatch({
       type: SET_PARTIAL,
       partial: parsed,
@@ -306,8 +314,9 @@ export const receivePartialFromEditor = ({ partial, deletions, configName }) => 
     const { prefix } = pathSlice(history.location.pathname);
     const analysis = analyzePartial(partial, deletions || []);
 
-    // SET_PARTIAL clears loadedFirmware in redux; drop the bulky cached File too
+    // SET_PARTIAL clears loadedFirmware/loadedTls in redux; drop the cached Files too
     cache.clearFirmware();
+    cache.clearTls();
     dispatch({
       type: SET_PARTIAL,
       partial,
@@ -413,6 +422,8 @@ export const loadFirmwareFile = (file) => {
         }
 
         // bulky bytes/schema stay in the module cache; redux holds a summary
+        // (SET_FIRMWARE clears loadedTls in redux; drop the cached File too)
+        cache.clearTls();
         cache.setFirmware({
           file,
           deviceType: fw.deviceType,
@@ -452,6 +463,62 @@ export const clearFirmware = () => {
     dispatch({ type: CLEAR_FIRMWARE });
     // CLEAR_FIRMWARE empties evaluations; re-run so the base (no-firmware,
     // no-partial) eligibility is restored and devices are selectable again
+    return dispatch(ensureArtifacts());
+  };
+};
+
+// ---------------------------------------------------------------------------
+// TLS certificate loading (Update TLS tab) - mutually exclusive with the
+// config and firmware flows. The .p7b is opaque to the tool: only the exact
+// file name and a sane size are enforced, the device validates the bundle.
+
+export const loadTlsFile = (file) => {
+  return function (dispatch, getState) {
+    if (getState().otaBatch.run.active) return;
+
+    const fail = (message) =>
+      dispatch(
+        alertActions.set({ type: "warning", message, autoClear: false })
+      );
+
+    if (file.name !== TLS_FILE_NAME) {
+      fail(
+        'The file must be named "' +
+          TLS_FILE_NAME +
+          '" - the device only picks up this exact name'
+      );
+      return;
+    }
+    if (!file.size) {
+      fail("The selected " + TLS_FILE_NAME + " is empty");
+      return;
+    }
+    if (file.size > TLS_MAX_FILE_SIZE) {
+      fail(
+        "The selected " +
+          TLS_FILE_NAME +
+          " is larger than " +
+          Math.round(TLS_MAX_FILE_SIZE / 1024) +
+          " KB - this does not look like a certificate bundle"
+      );
+      return;
+    }
+
+    // SET_TLS clears loadedFirmware in redux; drop the cached firmware File too
+    cache.clearFirmware();
+    cache.setTls({ file });
+    dispatch({ type: SET_TLS, tls: { fileName: file.name, size: file.size } });
+    return dispatch(ensureArtifacts());
+  };
+};
+
+export const clearTls = () => {
+  return function (dispatch, getState) {
+    if (getState().otaBatch.run.active) return;
+    cache.clearTls();
+    dispatch({ type: CLEAR_TLS });
+    // CLEAR_TLS empties evaluations; re-run so the base eligibility is
+    // restored and devices are selectable again (mirrors clearFirmware)
     return dispatch(ensureArtifacts());
   };
 };
@@ -561,7 +628,10 @@ const willChange = (evaluation, encryptActive) => {
     evaluation.enc.hasPlain &&
     evaluation.enc.compatible;
   const willFirmware = evaluation.fw && evaluation.fw.willUpdate;
-  return !!evaluation.partialChanges || !!willEncrypt || !!willFirmware;
+  const willTls = evaluation.tls && evaluation.tls.willUpdate;
+  return (
+    !!evaluation.partialChanges || !!willEncrypt || !!willFirmware || !!willTls
+  );
 };
 
 export const startRun = () => {

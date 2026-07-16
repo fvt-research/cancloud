@@ -496,6 +496,40 @@ class S3Explorer {
   }
 
   /**
+   * @method: presignedPutObjectRaw
+   * @description : presigned PUT URL with the object name taken VERBATIM
+   * (no underscore-to-slash rewrite - that convention is only for the upload
+   * flow's CANedge filename encoding). Needed for names like certs_server.p7b.
+   * @param {*} bucketName
+   * @param {*} objectName
+   * @param {*} expiry
+   * @param {*} cb
+   */
+  presignedPutObjectRaw(bucketName, objectName, expiry, cb) {
+    let objectNameWithPrefix;
+    if ("Home" == bucketName) {
+      objectNameWithPrefix = objectName;
+    } else {
+      objectNameWithPrefix = `${bucketName}/${objectName}`;
+    }
+    this.s3Client.presignedPutObject(
+      this.bucketName,
+      objectNameWithPrefix,
+      expiry,
+      function(err, presignedUrl) {
+        if (err) {
+          return cb(err);
+        }
+        let response = StorageResponses.makeDefaultResponse(
+          "url",
+          presignedUrl
+        );
+        return cb(err, response);
+      }
+    );
+  }
+
+  /**
    * Create URL Token with jwt signing
    */
   createURLToken(cb) {
@@ -705,6 +739,10 @@ S3Explorer.prototype.presignedGet = promisify(
 
 S3Explorer.prototype.presignedPutObject = promisify(
   S3Explorer.prototype.presignedPutObject
+);
+
+S3Explorer.prototype.presignedPutObjectRaw = promisify(
+  S3Explorer.prototype.presignedPutObjectRaw
 );
 
 S3Explorer.prototype.createURLToken = promisify(

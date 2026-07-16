@@ -62,6 +62,14 @@ export const getFirmwareActive = createSelector(
   (loadedFirmware) => !!loadedFirmware
 );
 
+// a certs_server.p7b is loaded -> the batch is a TLS certificate run
+// (mutually exclusive with the config/encrypt and firmware flows)
+const loadedTlsSelector = (state) => state.otaBatch.loadedTls;
+export const getTlsActive = createSelector(
+  loadedTlsSelector,
+  (loadedTls) => !!loadedTls
+);
+
 // derive the per-row display given the (toggle-independent) evaluation and the
 // effective encrypt state
 const deriveDisplay = (evaluation, encryptActive) => {
@@ -79,13 +87,15 @@ const deriveDisplay = (evaluation, encryptActive) => {
   // eligible
   const willFirmware = !!(evaluation.fw && evaluation.fw.willUpdate);
   const willMigrate = !!(willFirmware && evaluation.fw.willMigrate);
+  const willTls = !!(evaluation.tls && evaluation.tls.willUpdate);
   const willEncrypt = !!(
     encryptActive &&
     evaluation.enc &&
     evaluation.enc.hasPlain &&
     evaluation.enc.compatible
   );
-  const hasChange = !!evaluation.partialChanges || willEncrypt || willFirmware;
+  const hasChange =
+    !!evaluation.partialChanges || willEncrypt || willFirmware || willTls;
   let warnings = [];
   if (hasChange) {
     warnings = (evaluation.warnings || []).slice();
@@ -97,7 +107,8 @@ const deriveDisplay = (evaluation, encryptActive) => {
     warnings,
     willEncrypt,
     willFirmware,
-    willMigrate
+    willMigrate,
+    willTls
   };
 };
 

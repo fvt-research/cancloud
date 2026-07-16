@@ -21,6 +21,7 @@ let deviceSchemaHash = new Map(); // deviceId -> schema content hash
 let schemasByHash = new Map(); // hash -> { parsed, validator }
 let mergedResults = new Map(); // deviceId -> { merged, mergedText } (last evaluation)
 let firmware = null; // { file, deviceType, fwVer, revision, defaultConfig, targetSchema }
+let tls = null; // { file } - the raw certs_server.p7b File for the binary PUT
 
 export const setConfig = (deviceId, text) => {
   try {
@@ -101,10 +102,21 @@ export const clearFirmware = () => {
   firmware = null;
 };
 
+export const setTls = (entry) => {
+  tls = entry || null;
+};
+
+export const getTls = () => tls;
+
+export const clearTls = () => {
+  tls = null;
+};
+
 export const clearAll = () => {
   configs = new Map();
   deviceSchemaHash = new Map();
   schemasByHash = new Map();
   mergedResults = new Map();
   firmware = null;
+  tls = null;
 };

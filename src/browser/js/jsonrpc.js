@@ -135,6 +135,13 @@ export default class JSONrpc {
           options.params.expiry
         );
         break;
+      case "PresignedPutObjectRaw":
+        result = s3Explorer.presignedPutObjectRaw(
+          options.params.bucketName,
+          options.params.objectName,
+          options.params.expiry
+        );
+        break;
       case "GetObjectStat":
         result = s3Explorer.getObjectStat(
           options.params.bucketName,

@@ -205,9 +205,9 @@ class DeviceRow extends React.PureComponent {
         </td>
         <td>
           {display.status === "ready" &&
-          display.willFirmware &&
-          !display.willMigrate ? (
-            // patch-only firmware push: no config is written
+          (display.willTls ||
+            (display.willFirmware && !display.willMigrate)) ? (
+            // TLS certificate push / patch-only firmware push: no config is written
             <span className="grey-text">No config change</span>
           ) : display.status === "ready" ? (
             <a

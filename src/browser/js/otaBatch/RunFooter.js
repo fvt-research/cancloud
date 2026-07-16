@@ -2,7 +2,12 @@ import React from "react";
 import { connect } from "react-redux";
 
 import * as actions from "./actions";
-import { getCounts, getEncryptActive, getFirmwareActive } from "./selectors";
+import {
+  getCounts,
+  getEncryptActive,
+  getFirmwareActive,
+  getTlsActive
+} from "./selectors";
 import { encryptionCrypto } from "config-editor-tools";
 
 // Submission controls below the 25/75 layout: submit button, live run
@@ -12,6 +17,7 @@ export class RunFooter extends React.Component {
     const {
       encryptActive,
       firmwareActive,
+      tlsActive,
       counts,
       partial,
       partialBlockers,
@@ -25,12 +31,12 @@ export class RunFooter extends React.Component {
       encryptActive && encryptionCrypto.checkBrowserSupport() !== null;
     const hasPartial = partial && partialBlockers.length === 0;
     // nothing to submit unless there is a valid partial to apply, the encrypt
-    // toggle is effectively on, or a firmware.bin is loaded
+    // toggle is effectively on, or a firmware.bin / certs_server.p7b is loaded
     const submitDisabled =
       run.active ||
       counts.selected === 0 ||
       browserBlocked ||
-      (!hasPartial && !encryptActive && !firmwareActive);
+      (!hasPartial && !encryptActive && !firmwareActive && !tlsActive);
 
     return (
       <div className="ota-run-footer">
@@ -68,6 +74,7 @@ export class RunFooter extends React.Component {
 const mapStateToProps = (state) => ({
   encryptActive: getEncryptActive(state),
   firmwareActive: getFirmwareActive(state),
+  tlsActive: getTlsActive(state),
   partial: state.otaBatch.partial,
   partialBlockers: state.otaBatch.partialBlockers,
   run: state.otaBatch.run,

@@ -6,8 +6,10 @@ import CollapsiblePreview from "./CollapsiblePreview";
 import {
   getAggregatedWarnings,
   getEncryptActive,
-  getFirmwareActive
+  getFirmwareActive,
+  getTlsActive
 } from "./selectors";
+import { TLS_FILE_NAME } from "./constants";
 
 // Pre-submission confirmation: the user must see exactly what goes where and
 // explicitly acknowledge before any PUT happens
@@ -75,6 +77,7 @@ export class ConfirmSubmitModal extends React.Component {
       open,
       encryptActive,
       firmwareActive,
+      tlsActive,
       partial,
       partialNotes,
       selected,
@@ -90,14 +93,18 @@ export class ConfirmSubmitModal extends React.Component {
     const willEncrypt = (ev) =>
       encryptActive && ev && ev.enc && ev.enc.hasPlain && ev.enc.compatible;
     const willFirmware = (ev) => ev && ev.fw && ev.fw.willUpdate;
-    // only devices that will actually change (partial / encryption / firmware)
+    const willTls = (ev) => ev && ev.tls && ev.tls.willUpdate;
+    // only devices that will actually change (partial / encryption / firmware / TLS)
     const deviceIds = Object.keys(selected)
       .filter((deviceId) => {
         const ev = evaluations[deviceId];
         return (
           ev &&
           ev.eligible &&
-          (ev.partialChanges || willEncrypt(ev) || willFirmware(ev))
+          (ev.partialChanges ||
+            willEncrypt(ev) ||
+            willFirmware(ev) ||
+            willTls(ev))
         );
       })
       .sort();
@@ -123,7 +130,11 @@ export class ConfirmSubmitModal extends React.Component {
 
     // static label (the title already states whether encryption is applied) so
     // the button width does not jump between modes
-    const submitLabel = firmwareActive ? "Deploy firmware" : "Submit to S3";
+    const submitLabel = firmwareActive
+      ? "Deploy firmware"
+      : tlsActive
+      ? "Deploy certificates"
+      : "Submit to S3";
 
     return (
       <div className="show modal-custom-wrapper">
@@ -135,6 +146,8 @@ export class ConfirmSubmitModal extends React.Component {
             <span className="widget-title">
               {(firmwareActive
                 ? "Update firmware on "
+                : tlsActive
+                ? "Update TLS certificates on "
                 : encryptActive
                 ? "Encrypt & submit to "
                 : "Submit to ") +
@@ -181,6 +194,23 @@ export class ConfirmSubmitModal extends React.Component {
                   })
                 )}
               </div>
+            ) : tlsActive ? (
+              this.renderCollapsible(
+                this.state.targetsOpen,
+                () => this.setState({ targetsOpen: !this.state.targetsOpen }),
+                "Certificates (" + deviceIds.length + ")",
+                deviceIds.map((deviceId) => {
+                  const deviceJson = deviceFiles[deviceId] || {};
+                  return (
+                    deviceId +
+                    "/" +
+                    TLS_FILE_NAME +
+                    (deviceJson.log_meta
+                      ? "  (" + deviceJson.log_meta + ")"
+                      : "")
+                  );
+                })
+              )
             ) : (
               this.renderCollapsible(
                 this.state.targetsOpen,
@@ -354,6 +384,11 @@ export class ConfirmSubmitModal extends React.Component {
                     deviceIds.length +
                     " device" +
                     (deviceIds.length === 1 ? "" : "s")
+                  : tlsActive
+                  ? "I understand this will update the TLS server certificates of " +
+                    deviceIds.length +
+                    " device" +
+                    (deviceIds.length === 1 ? "" : "s")
                   : "I understand this will overwrite the Configuration File of " +
                     deviceIds.length +
                     " device" +
@@ -393,6 +428,7 @@ const mapStateToProps = (state) => ({
   open: state.otaBatch.confirmOpen,
   encryptActive: getEncryptActive(state),
   firmwareActive: getFirmwareActive(state),
+  tlsActive: getTlsActive(state),
   partial: state.otaBatch.partial,
   partialNotes: state.otaBatch.partialNotes,
   partialSource: state.otaBatch.partialSource,

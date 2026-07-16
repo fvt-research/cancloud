@@ -130,6 +130,10 @@ class Web {
     return this.makeCall("PresignedPutObject", args);
   }
 
+  PresignedPutObjectRaw(args) {
+    return this.makeCall("PresignedPutObjectRaw", args);
+  }
+
   PutObjectURL(args) {
     return this.makeCall("PutObjectURL", args);
   }

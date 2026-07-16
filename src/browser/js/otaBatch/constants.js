@@ -14,6 +14,15 @@ export const PUT_NAME_REGEX = /^[0-9A-Fa-f]{8}\/config-\d{2}\.\d{2}\.json$/;
 // object key whitelist asserted immediately before every firmware PUT
 export const FW_PUT_NAME_REGEX = /^[0-9A-Fa-f]{8}\/firmware\.bin$/;
 
+// TLS certificate batch: the device only picks up this exact object name
+export const TLS_FILE_NAME = "certs_server.p7b";
+
+// object key whitelist asserted immediately before every certificate PUT
+export const TLS_PUT_NAME_REGEX = /^[0-9A-Fa-f]{8}\/certs_server\.p7b$/;
+
+// a 10-cert RSA-2048 bundle is ~20 KB - anything larger is a wrong file
+export const TLS_MAX_FILE_SIZE = 262144;
+
 // bounded concurrency for the batch submission run
 export const SUBMIT_CONCURRENCY = 5;
 

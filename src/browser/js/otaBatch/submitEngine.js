@@ -19,12 +19,19 @@ import {
 } from "config-editor-tools";
 
 import * as cache from "./cache";
-import { analyzePartial, evaluateDevice, mergeConfig } from "./evaluate";
+import {
+  analyzePartial,
+  evaluateDevice,
+  mergeConfig,
+  tlsGate
+} from "./evaluate";
 import { getEncryptActive } from "./selectors";
 import {
   SUBMIT_CONCURRENCY,
   PUT_NAME_REGEX,
   FW_PUT_NAME_REGEX,
+  TLS_PUT_NAME_REGEX,
+  TLS_FILE_NAME,
   PRESIGN_EXPIRY
 } from "./constants";
 import { RUN_START, RUN_APPEND, RUN_DEVICE_STATUS, RUN_DONE } from "./actionTypes";
@@ -110,13 +117,13 @@ const putConfig = (deviceId, configName, body) => {
   return withOneRetry(() => web.PutObject({ objectName, file: body }));
 };
 
-// abort a firmware upload after this long without any request-body progress
+// abort a binary upload after this long without any request-body progress
 const FW_INACTIVITY_TIMEOUT_MS = 30000;
 
-// One binary PUT attempt for the (large) firmware.bin via a presigned URL +
-// XHR - the same transport uploads/uploadEngine.js uses. The JSON-RPC
+// One binary PUT attempt (firmware.bin / certs_server.p7b) via a presigned URL
+// + XHR - the same transport uploads/uploadEngine.js uses. The JSON-RPC
 // web.PutObject path stringifies the body and must NOT be used for binary.
-const xhrPutBinary = (url, file) =>
+const xhrPutBinary = (url, file, label) =>
   new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     let timer = null;
@@ -135,24 +142,25 @@ const xhrPutBinary = (url, file) =>
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve();
       } else {
-        const err = new Error("Firmware upload failed [" + xhr.status + "]");
+        const err = new Error(label + " upload failed [" + xhr.status + "]");
         err.status = xhr.status;
         reject(err);
       }
     };
     xhr.onerror = () => {
       done();
-      reject(new TypeError("Network error during firmware upload"));
+      reject(new TypeError("Network error during " + label + " upload"));
     };
     xhr.onabort = () => {
       done();
       reject(
         new Error(
           timedOut
-            ? "Firmware upload timeout - no data sent for " +
+            ? label +
+              " upload timeout - no data sent for " +
               FW_INACTIVITY_TIMEOUT_MS / 1000 +
               "s"
-            : "Firmware upload aborted"
+            : label + " upload aborted"
         )
       );
     };
@@ -177,8 +185,42 @@ const putFirmwareBin = (deviceId, file) => {
         objectName: "firmware.bin",
         expiry: PRESIGN_EXPIRY
       })
-      .then((res) => xhrPutBinary(res.url, file))
+      .then((res) => xhrPutBinary(res.url, file, "Firmware"))
   );
+};
+
+const putTlsCerts = (deviceId, file) => {
+  const objectName = deviceId + "/" + TLS_FILE_NAME;
+  if (
+    !TLS_PUT_NAME_REGEX.test(objectName) ||
+    objectName.indexOf(deviceId + "/") !== 0
+  ) {
+    throw new Error("Internal error - refusing to write to " + objectName);
+  }
+  // Raw variant: PresignedPutObject rewrites "_" to "/" (upload-filename
+  // convention), which would mangle certs_server.p7b into certs/server.p7b
+  return withOneRetry(() =>
+    web
+      .PresignedPutObjectRaw({
+        bucketName: deviceId,
+        objectName: TLS_FILE_NAME,
+        expiry: PRESIGN_EXPIRY
+      })
+      .then((res) => xhrPutBinary(res.url, file, "Certificate"))
+  );
+};
+
+// TLS run for one device: a single binary PUT of the certs_server.p7b to the
+// device root. No config is read or written, so there is no fresh-config GET
+// or crc32 drift check - only the (pure) firmware-revision gate is re-checked.
+const submitTlsDevice = async (dispatch, deviceId, token, deviceJson, tls) => {
+  const gate = tlsGate(deviceJson);
+  if (gate.reason) {
+    throw new Error(gate.reason);
+  }
+  await putTlsCerts(deviceId, tls.file);
+  if (token !== runToken) return;
+  setDeviceStatus(dispatch, deviceId, "submitted");
 };
 
 // firmware run for one device: fresh GET + drift check + re-gate, then migrate
@@ -311,6 +353,12 @@ const submitDevice = async (dispatch, getState, deviceId, token) => {
       validator,
       firmware
     );
+  }
+
+  // TLS run: PUT the certs_server.p7b to the device root (nothing else)
+  const tls = state.loadedTls ? cache.getTls() : null;
+  if (tls) {
+    return submitTlsDevice(dispatch, deviceId, token, deviceJson, tls);
   }
 
   // fresh baseline + drift check

@@ -1,6 +1,8 @@
 import {
   getEncryptEnablement,
   getEncryptActive,
+  getFirmwareActive,
+  getTlsActive,
   getRows,
   getFilteredRows,
   getFilteredEligibleRows,
@@ -139,6 +141,22 @@ describe("getRows", () => {
     );
   });
 
+  it("a TLS-run evaluation is 'ready' with willTls and no download payload flags", () => {
+    const evaluation = {
+      status: "eligible",
+      eligible: true,
+      partialChanges: false,
+      warnings: [],
+      tls: { willUpdate: true }
+    };
+    const disp = getRows(
+      rowsState({ devices: ["D"], deviceFiles: { D: {} }, evaluations: { D: evaluation } })
+    )[0].display;
+    expect(disp.status).toBe("ready");
+    expect(disp.willTls).toBe(true);
+    expect(disp.willFirmware).toBe(false);
+  });
+
   it("sets willEncrypt (and merges enc warnings) only when the encrypt toggle is active", () => {
     const evaluation = {
       status: "eligible",
@@ -157,6 +175,16 @@ describe("getRows", () => {
     expect(on.willEncrypt).toBe(true);
     expect(on.status).toBe("ready");
     expect(on.warnings).toContain("blank pwd");
+  });
+});
+
+describe("getFirmwareActive / getTlsActive", () => {
+  it("reflect whether a firmware.bin / certs_server.p7b is loaded", () => {
+    const mk = (over) => ({ otaBatch: { loadedFirmware: null, loadedTls: null, ...over } });
+    expect(getFirmwareActive(mk({}))).toBe(false);
+    expect(getTlsActive(mk({}))).toBe(false);
+    expect(getFirmwareActive(mk({ loadedFirmware: { fileName: "firmware.bin" } }))).toBe(true);
+    expect(getTlsActive(mk({ loadedTls: { fileName: "certs_server.p7b" } }))).toBe(true);
   });
 });
 

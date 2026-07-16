@@ -14,7 +14,7 @@ At [CSS Electronics](https://www.csselectronics.com), we always host the [latest
 1. Securely login to any S3 server by providing your endpoint, credentials and bucket name
 2. List all objects within an S3 bucket in a folder structure hierarchy
 3. Easily navigate between connected CANedge2/CANedge3 devices via the sidebar
-4. Download, share & delete objects - or upload files (e.g. firmware.bin for firmware over-the-air)
+4. Download, share & delete objects - or upload files (e.g. firmware.bin or certs_server.p7b for over-the-air updates)
 5. Configure CANedge devices via an online editor - and submit for easy over-the-air updates
 6. Encrypt configuration passwords using the built-in encryption tool
 7. Add device meta data (incl. pictures and searchable meta name)
