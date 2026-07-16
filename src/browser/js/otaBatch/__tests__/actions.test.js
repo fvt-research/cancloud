@@ -314,6 +314,34 @@ describe("run-active guards", () => {
   });
 });
 
+describe("clearPartial re-evaluation", () => {
+  it("re-evaluates on clear so devices are not stuck on 'Evaluating'", async () => {
+    const id = "AABBCCDD";
+    const { deviceFile, artifact } = seedLoaded(id);
+    const store = makeStore({
+      devices: [id],
+      devicesLoaded: true,
+      artifactsRequested: true,
+      deviceFiles: { [id]: deviceFile },
+      heartbeats: { [id]: Date.now() },
+      artifacts: { [id]: artifact },
+      partial: { connect: { s3: { server: { endpoint: "http://new-host" } } } }
+    });
+    // the loaded partial makes the device eligible with a partial change
+    store.dispatch(actions.evaluateAll());
+    expect(store.getState().otaBatch.evaluations[id].partialChanges).toBe(true);
+
+    await store.dispatch(actions.clearPartial());
+
+    const st = store.getState().otaBatch;
+    expect(st.partial).toBeNull();
+    // evaluations must be repopulated (base, no-partial) rather than left
+    // empty; an empty map renders every row as "Evaluating" until a refresh
+    expect(st.evaluations[id]).toBeDefined();
+    expect(st.evaluations[id].partialChanges).toBe(false);
+  });
+});
+
 describe("teardownView", () => {
   it("invalidates the run, clears the cache and resets the slice", () => {
     cache.setConfig("X", JSON.stringify(baseConfig()));

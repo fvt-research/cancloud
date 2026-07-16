@@ -39,6 +39,62 @@
     min-height: 0;
 }
 
+// single left widget with an "Update config" / "Update FW" tab strip
+.ota-left-widget {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.ota-tab-strip {
+    display: flex;
+    flex: 0 0 auto;
+    border-bottom: 1px solid #e0e0e0;
+    margin-bottom: 12px;
+}
+
+.ota-tab {
+    flex: 1 1 0;
+    padding: 8px 4px;
+    border: none;
+    border-bottom: 1px solid transparent;
+    background: transparent;
+    color: #555;
+    font-size: 90%;
+    font-weight: 400;
+    text-transform: uppercase;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.ota-tab:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.ota-tab-active {
+    color: @blue;
+    border-bottom-color: @blue;
+}
+
+.ota-tab-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+}
+
+.ota-fw-info {
+    font-size: 12px;
+    margin: 8px 0;
+}
+
+.ota-section-divider {
+    margin: 16px 0;
+    border: 0;
+    border-top: 1px solid #e0e0e0;
+}
+
 .ota-batch-right {
     flex: 1 1 auto;
     min-width: 0;

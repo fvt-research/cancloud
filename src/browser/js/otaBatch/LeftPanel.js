@@ -4,7 +4,6 @@ import Files from "react-files";
 
 import * as actions from "./actions";
 import * as alertActions from "../alert/actions";
-import CollapsiblePreview from "./CollapsiblePreview";
 
 // Top-left widget: the optional partial config loader. Styled like the
 // encryption editor tool: small status/note/problem rows and a
@@ -13,7 +12,6 @@ import CollapsiblePreview from "./CollapsiblePreview";
 export class LeftPanel extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { previewOpen: false };
     this.fileReader = new FileReader();
     this.pendingFileName = "";
 
@@ -70,7 +68,7 @@ export class LeftPanel extends React.Component {
 
     return (
       <div className="ota-left-panel">
-        <span className="widget-title">Configure devices</span>
+        <span className="widget-title">Update configurations</span>
         <div className="ota-steps">
           <ol>
             <li>Load a full/partial Configuration File (or transfer from editor's review modal)</li>
@@ -116,17 +114,6 @@ export class LeftPanel extends React.Component {
         {partialNotes.map((message, index) =>
           this.renderNoteRow(message, "note" + index)
         )}
-
-        {partial && !partialBlockers.length ? (
-          <CollapsiblePreview
-            open={this.state.previewOpen}
-            onToggle={() =>
-              this.setState({ previewOpen: !this.state.previewOpen })
-            }
-            data={partial}
-            label="Show partial config preview"
-          />
-        ) : null}
       </div>
     );
   }

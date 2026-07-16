@@ -12,7 +12,11 @@
 
 import web from "../web";
 import { createRequestQueue } from "../requestQueue";
-import { encryptionFields, encryptionCrypto } from "config-editor-tools";
+import {
+  encryptionFields,
+  encryptionCrypto,
+  migration
+} from "config-editor-tools";
 
 import * as cache from "./cache";
 import { analyzePartial, evaluateDevice, mergeConfig } from "./evaluate";
@@ -20,6 +24,7 @@ import { getEncryptActive } from "./selectors";
 import {
   SUBMIT_CONCURRENCY,
   PUT_NAME_REGEX,
+  FW_PUT_NAME_REGEX,
   PRESIGN_EXPIRY
 } from "./constants";
 import { RUN_START, RUN_APPEND, RUN_DEVICE_STATUS, RUN_DONE } from "./actionTypes";
@@ -105,6 +110,174 @@ const putConfig = (deviceId, configName, body) => {
   return withOneRetry(() => web.PutObject({ objectName, file: body }));
 };
 
+// abort a firmware upload after this long without any request-body progress
+const FW_INACTIVITY_TIMEOUT_MS = 30000;
+
+// One binary PUT attempt for the (large) firmware.bin via a presigned URL +
+// XHR - the same transport uploads/uploadEngine.js uses. The JSON-RPC
+// web.PutObject path stringifies the body and must NOT be used for binary.
+const xhrPutBinary = (url, file) =>
+  new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let timer = null;
+    let timedOut = false;
+    const arm = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        timedOut = true;
+        xhr.abort();
+      }, FW_INACTIVITY_TIMEOUT_MS);
+    };
+    const done = () => clearTimeout(timer);
+    xhr.open("PUT", url, true);
+    xhr.onload = () => {
+      done();
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+      } else {
+        const err = new Error("Firmware upload failed [" + xhr.status + "]");
+        err.status = xhr.status;
+        reject(err);
+      }
+    };
+    xhr.onerror = () => {
+      done();
+      reject(new TypeError("Network error during firmware upload"));
+    };
+    xhr.onabort = () => {
+      done();
+      reject(
+        new Error(
+          timedOut
+            ? "Firmware upload timeout - no data sent for " +
+              FW_INACTIVITY_TIMEOUT_MS / 1000 +
+              "s"
+            : "Firmware upload aborted"
+        )
+      );
+    };
+    xhr.upload.addEventListener("progress", arm);
+    arm();
+    xhr.send(file);
+  });
+
+const putFirmwareBin = (deviceId, file) => {
+  const objectName = deviceId + "/firmware.bin";
+  if (
+    !FW_PUT_NAME_REGEX.test(objectName) ||
+    objectName.indexOf(deviceId + "/") !== 0
+  ) {
+    throw new Error("Internal error - refusing to write to " + objectName);
+  }
+  // fresh presigned URL per attempt (signing is local, no request)
+  return withOneRetry(() =>
+    web
+      .PresignedPutObject({
+        bucketName: deviceId,
+        objectName: "firmware.bin",
+        expiry: PRESIGN_EXPIRY
+      })
+      .then((res) => xhrPutBinary(res.url, file))
+  );
+};
+
+// firmware run for one device: fresh GET + drift check + re-gate, then migrate
+// the config (if needed) and PUT it BEFORE the firmware.bin so the device has a
+// compatible config when the new firmware boots (canedge_manager.py fw_update)
+const submitFirmwareDevice = async (
+  dispatch,
+  getState,
+  deviceId,
+  token,
+  deviceJson,
+  evaluation,
+  validator,
+  firmware
+) => {
+  const freshText = await fetchFreshConfigText(deviceId, deviceJson.cfg_name);
+  if (cache.crc32Hex(freshText) !== evaluation.baselineCrc32) {
+    throw new Error(
+      "Config changed on the server since review - use Retry failed to re-evaluate and resubmit"
+    );
+  }
+  const freshParsed = JSON.parse(freshText);
+
+  // authoritative re-run of the firmware gate on fresh data
+  const result = evaluateDevice({
+    deviceId,
+    deviceJson,
+    heartbeatMs: null,
+    nowMs: null,
+    config: {
+      data: { text: freshText, parsed: freshParsed },
+      meta: { status: "loaded", crc32: cache.crc32Hex(freshText) }
+    },
+    schemaStatus: "loaded",
+    validator,
+    partial: null,
+    facts: null,
+    firmware
+  });
+  if (result.status === "blocked") {
+    throw new Error(
+      result.reasons && result.reasons[0]
+        ? result.reasons[0]
+        : "Firmware update is no longer applicable"
+    );
+  }
+  const fw = result.fw;
+  if (!fw || !fw.willUpdate) {
+    if (token !== runToken) return;
+    setDeviceStatus(dispatch, deviceId, "submitted", "Already on this firmware");
+    return;
+  }
+
+  // 1. config-before-firmware: migrate + validate + PUT the new config first
+  let configWritten = false;
+  if (fw.willMigrate) {
+    const migrated = migration.migrateConfig({
+      configOld: freshParsed,
+      fromRevision: fw.fromRevision,
+      toRevision: fw.toRevision,
+      deviceType: firmware.deviceType,
+      defaultConfig: firmware.defaultConfig,
+      targetSchema: firmware.targetSchema
+    });
+    if (!migrated.valid) {
+      throw new Error(
+        "Migrated config is invalid: " +
+          (migrated.errors && migrated.errors[0]
+            ? migrated.errors[0]
+            : "unknown error")
+      );
+    }
+    await putConfig(
+      deviceId,
+      fw.targetConfigName,
+      JSON.stringify(migrated.migratedConfig, null, 2)
+    );
+    configWritten = true;
+  }
+
+  // 2. only after the config write (if any) succeeds, PUT the firmware.bin
+  try {
+    await putFirmwareBin(deviceId, firmware.file);
+  } catch (e) {
+    if (configWritten) {
+      // config landed but firmware failed - the safe direction (config is
+      // forward-compatible); surface a distinct, retriable message
+      throw new Error(
+        "Config updated, but the firmware upload failed (use Retry failed): " +
+          friendlyMessage(e)
+      );
+    }
+    throw e;
+  }
+
+  if (token !== runToken) return;
+  setDeviceStatus(dispatch, deviceId, "submitted");
+};
+
 const submitDevice = async (dispatch, getState, deviceId, token) => {
   if (token !== runToken) return;
 
@@ -123,6 +296,21 @@ const submitDevice = async (dispatch, getState, deviceId, token) => {
 
   if (!deviceJson || !evaluation || !evaluation.eligible || !validator) {
     throw new Error("Device is no longer ready - re-evaluate");
+  }
+
+  // firmware run: migrate (if needed) -> PUT config -> PUT firmware.bin
+  const firmware = state.loadedFirmware ? cache.getFirmware() : null;
+  if (firmware) {
+    return submitFirmwareDevice(
+      dispatch,
+      getState,
+      deviceId,
+      token,
+      deviceJson,
+      evaluation,
+      validator,
+      firmware
+    );
   }
 
   // fresh baseline + drift check

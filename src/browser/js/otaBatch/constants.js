@@ -8,8 +8,11 @@ export const SUPPORTED_REVISIONS =
 // anchored device folder test (stricter than the unanchored loggerRegex)
 export const DEVICE_FOLDER_REGEX = /^[0-9A-Fa-f]{8}$/;
 
-// object key whitelist asserted immediately before every batch PUT
+// object key whitelist asserted immediately before every batch config PUT
 export const PUT_NAME_REGEX = /^[0-9A-Fa-f]{8}\/config-\d{2}\.\d{2}\.json$/;
+
+// object key whitelist asserted immediately before every firmware PUT
+export const FW_PUT_NAME_REGEX = /^[0-9A-Fa-f]{8}\/firmware\.bin$/;
 
 // bounded concurrency for the batch submission run
 export const SUBMIT_CONCURRENCY = 5;

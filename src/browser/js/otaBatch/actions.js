@@ -4,7 +4,12 @@ import { pathSlice } from "../utils";
 import { statusRequestQueue } from "../requestQueue";
 import * as dashboardStatusActions from "../dashboardStatus/actions";
 import * as alertActions from "../alert/actions";
-import { encryptionFields, encryptionCrypto } from "config-editor-tools";
+import {
+  encryptionFields,
+  encryptionCrypto,
+  migration
+} from "config-editor-tools";
+import { loadFile } from "config-editor-base";
 
 import * as cache from "./cache";
 import { analyzePartial, evaluateDevice, mergeConfig } from "./evaluate";
@@ -15,7 +20,11 @@ import {
   abortRun as engineAbortRun,
   invalidateRun as engineInvalidateRun
 } from "./submitEngine";
-import { DEVICE_FOLDER_REGEX, PRESIGN_EXPIRY } from "./constants";
+import {
+  DEVICE_FOLDER_REGEX,
+  PRESIGN_EXPIRY,
+  SUPPORTED_REVISIONS
+} from "./constants";
 import {
   SET_ENCRYPT_PASSWORDS,
   SET_DEVICE_DATA,
@@ -29,6 +38,9 @@ import {
   TOGGLE_SELECT,
   SET_SELECTION,
   SET_CONFIRM_OPEN,
+  SET_ACTIVE_TAB,
+  SET_FIRMWARE,
+  CLEAR_FIRMWARE,
   RUN_ABORT_REQUESTED,
   RUN_DEVICE_STATUS,
   RESET
@@ -207,6 +219,7 @@ export const evaluateAll = () => {
     const analysis = state.partial
       ? analyzePartial(state.partial, state.partialDeletions)
       : null;
+    const firmware = state.loadedFirmware ? cache.getFirmware() : null;
     const nowMs = Date.now();
 
     state.devices.forEach((deviceId) => {
@@ -223,7 +236,8 @@ export const evaluateAll = () => {
         schemaStatus: (artifact.schema || { status: "loading" }).status,
         validator: cache.getValidator(deviceId),
         partial: state.partial,
-        facts: analysis ? analysis.facts : null
+        facts: analysis ? analysis.facts : null,
+        firmware
       };
 
       const result = evaluateDevice(input);
@@ -245,7 +259,8 @@ export const evaluateAll = () => {
         baselineCrc32: result.baselineCrc32,
         partialChanges: result.partialChanges,
         currentEncStatus: result.currentEncStatus,
-        enc: result.enc
+        enc: result.enc,
+        fw: result.fw
       };
     });
 
@@ -271,6 +286,8 @@ export const loadPartialFile = (fileName, rawText) => {
       blockers = analysis.blockers;
       notes = analysis.notes;
     }
+    // SET_PARTIAL clears loadedFirmware in redux; drop the bulky cached File too
+    cache.clearFirmware();
     dispatch({
       type: SET_PARTIAL,
       partial: parsed,
@@ -289,6 +306,8 @@ export const receivePartialFromEditor = ({ partial, deletions, configName }) => 
     const { prefix } = pathSlice(history.location.pathname);
     const analysis = analyzePartial(partial, deletions || []);
 
+    // SET_PARTIAL clears loadedFirmware in redux; drop the bulky cached File too
+    cache.clearFirmware();
     dispatch({
       type: SET_PARTIAL,
       partial,
@@ -314,6 +333,10 @@ export const clearPartial = () => {
   return function (dispatch, getState) {
     if (getState().otaBatch.run.active) return;
     dispatch({ type: CLEAR_PARTIAL });
+    // CLEAR_PARTIAL empties evaluations; re-run so the base (no-partial)
+    // eligibility is restored and devices are selectable again instead of
+    // stuck on "Evaluating" until a manual refresh (mirrors clearFirmware)
+    return dispatch(ensureArtifacts());
   };
 };
 
@@ -323,6 +346,113 @@ export const setEncryptPasswords = (value) => {
   return function (dispatch, getState) {
     if (getState().otaBatch.run.active) return;
     dispatch({ type: SET_ENCRYPT_PASSWORDS, value });
+  };
+};
+
+// ---------------------------------------------------------------------------
+// firmware loading (Update FW tab) - mutually exclusive with the config flow
+
+export const setActiveTab = (tab) => {
+  return function (dispatch, getState) {
+    if (getState().otaBatch.run.active) return;
+    dispatch({ type: SET_ACTIVE_TAB, tab });
+  };
+};
+
+// parse + verify an uploaded firmware.bin, then load it as the batch target.
+// Reads only the header + embedded JSON (never the full ~50 MB image).
+export const loadFirmwareFile = (file) => {
+  return function (dispatch, getState) {
+    if (getState().otaBatch.run.active) return Promise.resolve();
+
+    const fail = (message) =>
+      dispatch(
+        alertActions.set({ type: "warning", message, autoClear: false })
+      );
+
+    return Promise.resolve(file.slice(0, 64).arrayBuffer())
+      .then((header) => {
+        const span = migration.firmwareSpan(header);
+        const end = Math.min(file.size, Math.max(span, 64));
+        return file.slice(0, end).arrayBuffer();
+      })
+      .then((buffer) => {
+        const fw = migration.parseFirmwareBin(buffer);
+
+        // must be a revision this tool can migrate to (hops 01.07-01.09)
+        if (!SUPPORTED_REVISIONS.includes(fw.revision)) {
+          fail(
+            "This tool supports firmware revisions " +
+              SUPPORTED_REVISIONS.join(", ") +
+              " (this firmware is " +
+              fw.revision +
+              ")"
+          );
+          return;
+        }
+        // known/official firmware: its embedded default config must validate
+        // against our bundled dist schema for this device type + revision
+        const targetSchema = loadFile(
+          "schema-" + fw.revision + ".json | " + fw.deviceType
+        );
+        if (!targetSchema) {
+          fail(
+            "No reference schema is bundled for " +
+              fw.deviceType +
+              " " +
+              fw.revision +
+              " - cannot verify this firmware"
+          );
+          return;
+        }
+        if (!migration.checkKnownFirmware(fw.defaultConfig, targetSchema)) {
+          fail(
+            "This firmware.bin does not contain a recognized CANedge configuration (possibly custom firmware). It is not supported."
+          );
+          return;
+        }
+
+        // bulky bytes/schema stay in the module cache; redux holds a summary
+        cache.setFirmware({
+          file,
+          deviceType: fw.deviceType,
+          fwVer: fw.fwVer,
+          revision: fw.revision,
+          defaultConfig: fw.defaultConfig,
+          targetSchema
+        });
+        dispatch({
+          type: SET_FIRMWARE,
+          firmware: {
+            fileName: file.name,
+            deviceType: fw.deviceType,
+            fwVer: fw.fwVer,
+            revision: fw.revision
+          }
+        });
+        return true;
+      })
+      .catch((e) => {
+        fail(
+          "Could not read this firmware.bin: " +
+            (e && e.message ? e.message : String(e))
+        );
+        return false;
+      })
+      // outside the catch so an artifact-refresh failure is not reported as
+      // an unreadable firmware.bin
+      .then((loaded) => (loaded ? dispatch(ensureArtifacts()) : undefined));
+  };
+};
+
+export const clearFirmware = () => {
+  return function (dispatch, getState) {
+    if (getState().otaBatch.run.active) return;
+    cache.clearFirmware();
+    dispatch({ type: CLEAR_FIRMWARE });
+    // CLEAR_FIRMWARE empties evaluations; re-run so the base (no-firmware,
+    // no-partial) eligibility is restored and devices are selectable again
+    return dispatch(ensureArtifacts());
   };
 };
 
@@ -343,8 +473,13 @@ export const downloadNewConfig = (deviceId) => {
     const rootState = getState();
     const state = rootState.otaBatch;
     const deviceJson = state.deviceFiles[deviceId];
+    const evaluation = state.evaluations[deviceId];
+    // targetName differs from cfg_name in a firmware run that migrates
     const fileName =
-      deviceId + "_" + (deviceJson ? deviceJson.cfg_name : "config.json");
+      deviceId +
+      "_" +
+      ((evaluation && evaluation.targetName) ||
+        (deviceJson ? deviceJson.cfg_name : "config.json"));
 
     // the post-merge base (partial applied if loaded, else the raw config)
     const mergedResult = cache.getMergedResult(deviceId);
@@ -356,7 +491,6 @@ export const downloadNewConfig = (deviceId) => {
       : null;
     if (!base) return Promise.resolve();
 
-    const evaluation = state.evaluations[deviceId];
     const encryptThisDevice =
       getEncryptActive(rootState) &&
       evaluation &&
@@ -426,7 +560,8 @@ const willChange = (evaluation, encryptActive) => {
     evaluation.enc &&
     evaluation.enc.hasPlain &&
     evaluation.enc.compatible;
-  return !!evaluation.partialChanges || !!willEncrypt;
+  const willFirmware = evaluation.fw && evaluation.fw.willUpdate;
+  return !!evaluation.partialChanges || !!willEncrypt || !!willFirmware;
 };
 
 export const startRun = () => {

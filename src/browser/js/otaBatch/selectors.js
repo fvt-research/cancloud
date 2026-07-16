@@ -54,6 +54,14 @@ export const getEncryptActive = createSelector(
   (encryptPasswords, enablement) => encryptPasswords && enablement.enabled
 );
 
+// a firmware.bin is loaded -> the batch is a firmware run (mutually exclusive
+// with the config/encrypt flow)
+const loadedFirmwareSelector = (state) => state.otaBatch.loadedFirmware;
+export const getFirmwareActive = createSelector(
+  loadedFirmwareSelector,
+  (loadedFirmware) => !!loadedFirmware
+);
+
 // derive the per-row display given the (toggle-independent) evaluation and the
 // effective encrypt state
 const deriveDisplay = (evaluation, encryptActive) => {
@@ -69,13 +77,15 @@ const deriveDisplay = (evaluation, encryptActive) => {
     };
   }
   // eligible
+  const willFirmware = !!(evaluation.fw && evaluation.fw.willUpdate);
+  const willMigrate = !!(willFirmware && evaluation.fw.willMigrate);
   const willEncrypt = !!(
     encryptActive &&
     evaluation.enc &&
     evaluation.enc.hasPlain &&
     evaluation.enc.compatible
   );
-  const hasChange = !!evaluation.partialChanges || willEncrypt;
+  const hasChange = !!evaluation.partialChanges || willEncrypt || willFirmware;
   let warnings = [];
   if (hasChange) {
     warnings = (evaluation.warnings || []).slice();
@@ -85,7 +95,9 @@ const deriveDisplay = (evaluation, encryptActive) => {
     status: hasChange ? "ready" : "nochange",
     reasons: [],
     warnings,
-    willEncrypt
+    willEncrypt,
+    willFirmware,
+    willMigrate
   };
 };
 

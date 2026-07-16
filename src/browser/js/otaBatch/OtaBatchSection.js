@@ -5,6 +5,7 @@ import web from "../web";
 import * as actions from "./actions";
 import LeftPanel from "./LeftPanel";
 import EncryptPanel from "./EncryptPanel";
+import FwPanel from "./FwPanel";
 import OtaDeviceTable from "./OtaDeviceTable";
 import RunFooter from "./RunFooter";
 import ConfirmSubmitModal from "./ConfirmSubmitModal";
@@ -40,7 +41,16 @@ export class OtaBatchSection extends React.Component {
   }
 
   render() {
-    const { devicesLoaded } = this.props;
+    const {
+      devicesLoaded,
+      activeTab,
+      loadedFirmware,
+      partial,
+      encryptPasswords,
+      runActive,
+      setActiveTab
+    } = this.props;
+    const hasConfigState = !!partial || !!encryptPasswords;
 
     if (!web.LoggedIn()) {
       return (
@@ -62,11 +72,41 @@ export class OtaBatchSection extends React.Component {
 
         <div className="ota-batch-layout">
           <div className="ota-batch-left">
-            <div className="ota-batch-left-top dashboard-widget">
-              <LeftPanel />
-            </div>
-            <div className="ota-batch-left-bottom dashboard-widget">
-              <EncryptPanel />
+            <div className="dashboard-widget ota-left-widget">
+              <div className="ota-tab-strip">
+                <button
+                  type="button"
+                  className={
+                    "ota-tab" +
+                    (activeTab === "config" ? " ota-tab-active" : "")
+                  }
+                  disabled={runActive || !!loadedFirmware}
+                  onClick={() => setActiveTab("config")}
+                >
+                  Update config
+                </button>
+                <button
+                  type="button"
+                  className={
+                    "ota-tab" + (activeTab === "fw" ? " ota-tab-active" : "")
+                  }
+                  disabled={runActive || hasConfigState}
+                  onClick={() => setActiveTab("fw")}
+                >
+                  Update FW
+                </button>
+              </div>
+              <div className="ota-tab-body">
+                {activeTab === "fw" ? (
+                  <FwPanel />
+                ) : (
+                  <div>
+                    <LeftPanel />
+                    <hr className="ota-section-divider" />
+                    <EncryptPanel />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           <div className="ota-batch-right dashboard-widget">
@@ -89,11 +129,17 @@ export class OtaBatchSection extends React.Component {
 }
 
 const mapStateToProps = (state) => ({
-  devicesLoaded: state.otaBatch.devicesLoaded
+  devicesLoaded: state.otaBatch.devicesLoaded,
+  activeTab: state.otaBatch.activeTab,
+  loadedFirmware: state.otaBatch.loadedFirmware,
+  partial: state.otaBatch.partial,
+  encryptPasswords: state.otaBatch.encryptPasswords,
+  runActive: state.otaBatch.run.active
 });
 
 const mapDispatchToProps = (dispatch) => ({
-  teardown: () => dispatch(actions.teardownView())
+  teardown: () => dispatch(actions.teardownView()),
+  setActiveTab: (tab) => dispatch(actions.setActiveTab(tab))
 });
 
 export default connect(mapStateToProps, mapDispatchToProps)(OtaBatchSection);

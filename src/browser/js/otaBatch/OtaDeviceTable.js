@@ -204,7 +204,12 @@ class DeviceRow extends React.PureComponent {
           ) : null}
         </td>
         <td>
-          {display.status === "ready" ? (
+          {display.status === "ready" &&
+          display.willFirmware &&
+          !display.willMigrate ? (
+            // patch-only firmware push: no config is written
+            <span className="grey-text">No config change</span>
+          ) : display.status === "ready" ? (
             <a
               href=""
               className="ota-download-link"

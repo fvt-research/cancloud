@@ -8,7 +8,7 @@
 // - encryption analysis/guards = config-editor-tools encryptionFields
 
 import { editorActions } from "config-editor-base";
-import { encryptionFields } from "config-editor-tools";
+import { encryptionFields, migration } from "config-editor-tools";
 import { SUPPORTED_REVISIONS, STALE_HEARTBEAT_MS } from "./constants";
 import { classifyCurrentEncryption } from "../encryptionLock";
 
@@ -421,6 +421,67 @@ const partialCredentialGates = (merged, current, facts) => {
 };
 
 // -------------------------------------------------------------------------
+// per-device firmware-update assessment (FW run only). Reuses the Phase-1
+// migration helpers so fleet and single-device (editor) behavior cannot
+// diverge. Returns one of:
+//   { reason }                                  -> blocked (grayed)
+//   { willUpdate: false }                       -> already on the target FW
+//   { willUpdate: true, willMigrate, fromRevision, toRevision, targetConfigName }
+export const firmwareGate = (deviceJson, firmware) => {
+  const deviceType = encryptionFields.DEVICE_TYPE_MAP[deviceJson.type];
+
+  if (!migration.checkDeviceTypeMatch(firmware.deviceType, deviceType)) {
+    return {
+      reason:
+        "This firmware is for a " +
+        firmware.deviceType +
+        ", but this device is a " +
+        (deviceType || "device of unknown type")
+    };
+  }
+
+  // already on the exact target firmware (full MM.mm.pp compare) - nothing to do
+  if (deviceJson.fw_ver && deviceJson.fw_ver === firmware.fwVer) {
+    return { willUpdate: false };
+  }
+
+  // migration decision is on the 2-part revision only (patch never changes the schema)
+  const cmp = migration.compareRevisions(firmware.revision, deviceJson.cfg_ver);
+  if (cmp < 0) {
+    return {
+      reason:
+        "Firmware " +
+        firmware.revision +
+        " is an older revision than this device's configuration (" +
+        deviceJson.cfg_ver +
+        ") - downgrade is not supported"
+    };
+  }
+  if (cmp === 0) {
+    // same major/minor, different patch: push firmware, existing config is compatible
+    return {
+      willUpdate: true,
+      willMigrate: false,
+      fromRevision: deviceJson.cfg_ver,
+      toRevision: firmware.revision,
+      targetConfigName: deviceJson.cfg_name
+    };
+  }
+  // cmp > 0: migrate the config up to the firmware revision
+  const m = migration.evaluateMigration(deviceJson.cfg_ver, firmware.revision);
+  if (m.status !== "migrate") {
+    return { reason: m.message };
+  }
+  return {
+    willUpdate: true,
+    willMigrate: true,
+    fromRevision: deviceJson.cfg_ver,
+    toRevision: firmware.revision,
+    targetConfigName: "config-" + firmware.revision + ".json"
+  };
+};
+
+// -------------------------------------------------------------------------
 // unified per-device evaluation
 //
 // A partial is optional. The result carries BOTH the partial-merge outcome and
@@ -435,7 +496,16 @@ const partialCredentialGates = (merged, current, facts) => {
 //           partialChanges, warnings, targetName, baselineCrc32,
 //           currentEncStatus, enc, merged, mergedText }
 export const evaluateDevice = (input) => {
-  const { deviceJson, heartbeatMs, nowMs, config, validator, partial, facts } = input;
+  const {
+    deviceJson,
+    heartbeatMs,
+    nowMs,
+    config,
+    validator,
+    partial,
+    facts,
+    firmware
+  } = input;
 
   const base = deviceBaseGates(input);
   if (base.pending) {
@@ -453,6 +523,119 @@ export const evaluateDevice = (input) => {
   // base ok -> config.data.parsed and validator are present
   const current = config.data.parsed;
   const currentEncStatus = classifyCurrentEncryption(current);
+
+  // firmware run: the FW path fully replaces the partial/encrypt path
+  if (firmware) {
+    const gate = firmwareGate(deviceJson, firmware);
+    if (gate.reason) {
+      return {
+        status: "blocked",
+        eligible: false,
+        reasons: [gate.reason],
+        warnings: [],
+        currentEncStatus
+      };
+    }
+    if (!gate.willUpdate) {
+      // already on the exact target firmware - shown but not selectable
+      return {
+        status: "eligible",
+        eligible: false,
+        reasons: [],
+        warnings: [],
+        currentEncStatus,
+        baselineCrc32: config.meta.crc32,
+        targetName: deviceJson.cfg_name,
+        fw: { willUpdate: false, upToDate: true }
+      };
+    }
+
+    // if a migration is needed, run it now and validate against the target
+    // (official) schema, so an incompatible config (e.g. from a custom firmware)
+    // is caught during evaluation and grayed out rather than only failing at
+    // submit. Non-migrating (patch-only) devices keep their already-valid config.
+    let migratedConfig = null;
+    if (gate.willMigrate) {
+      const migrated = migration.migrateConfig({
+        configOld: current,
+        fromRevision: gate.fromRevision,
+        toRevision: gate.toRevision,
+        deviceType: firmware.deviceType,
+        defaultConfig: firmware.defaultConfig,
+        targetSchema: null // validated below with the pre-compiled target validator
+      });
+      if (!migrated.migratedConfig) {
+        return {
+          status: "blocked",
+          eligible: false,
+          reasons: [
+            (migrated.errors && migrated.errors[0]) ||
+              "Configuration File cannot be migrated to " + gate.toRevision
+          ],
+          warnings: [],
+          currentEncStatus
+        };
+      }
+      if (
+        firmware.targetValidator &&
+        !firmware.targetValidator(migrated.migratedConfig)
+      ) {
+        const errs = firmware.targetValidator.errors || [];
+        const first = errs[0]
+          ? (
+              (errs[0].dataPath || errs[0].instancePath || "") +
+              " " +
+              errs[0].message
+            ).trim()
+          : "unknown error";
+        const more = errs.length > 1 ? " (+" + (errs.length - 1) + " more)" : "";
+        return {
+          status: "blocked",
+          eligible: false,
+          reasons: [
+            "Migrated Configuration File is not valid for firmware " +
+              gate.toRevision +
+              ": " +
+              first +
+              more
+          ],
+          warnings: [],
+          currentEncStatus
+        };
+      }
+      migratedConfig = migrated.migratedConfig;
+    }
+
+    const fwWarnings = [];
+    const fwSync = crcSyncWarning(deviceJson, config.meta.crc32);
+    if (fwSync) fwWarnings.push(fwSync);
+    const fwStale = heartbeatWarning(heartbeatMs, nowMs);
+    if (fwStale) fwWarnings.push(fwStale);
+    return {
+      status: "eligible",
+      eligible: true,
+      reasons: [],
+      partialChanges: false,
+      warnings: fwWarnings,
+      targetName: gate.targetConfigName,
+      baselineCrc32: config.meta.crc32,
+      currentEncStatus,
+      // the migrated config (when migrating) so the "New config" download
+      // serves exactly what the run will write
+      merged: migratedConfig || undefined,
+      mergedText: migratedConfig
+        ? JSON.stringify(migratedConfig, null, 2)
+        : undefined,
+      fw: {
+        willUpdate: true,
+        willMigrate: gate.willMigrate,
+        fromRevision: gate.fromRevision,
+        toRevision: gate.toRevision,
+        targetConfigName: gate.targetConfigName
+      }
+    };
+  }
+
   const merged = partial ? mergeConfig(current, partial) : current;
 
   if (!validator(merged)) {

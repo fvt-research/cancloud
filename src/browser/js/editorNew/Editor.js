@@ -13,6 +13,7 @@ import {
   EncryptionModal,
   FilterModal,
   BitRateModal,
+  MigrationModal,
 } from "config-editor-tools";
 
 // import other modals
@@ -124,6 +125,18 @@ class Editor extends React.Component {
 
   render() {
     let editorTools = [
+      {
+        name: "migration-modal",
+        comment: "Migrate Configuration File",
+        class: "fa fa-arrow-circle-up",
+        modal: (
+          <MigrationModal
+            showAlert={this.props.showAlert}
+            schemaAry={schemaAry}
+            uiSchemaAry={uiSchemaAry}
+          />
+        ),
+      },
       {
         name: "obd-modal",
         comment: "OBD tool",

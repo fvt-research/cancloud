@@ -16,6 +16,8 @@ const initialState = {
   partialSource: null, // { kind: "file"|"editor", fileName?, deviceId?, configName?, revision? }
   partialBlockers: [], // batch-level blocking errors
   partialNotes: [], // batch-level non-blocking notes
+  activeTab: "config", // "config" | "fw" - mutually exclusive left-panel modes
+  loadedFirmware: null, // { fileName, deviceType, fwVer, revision } (bytes/schema in cache.js)
   devices: [], // all device folder ids (sorted)
   deviceFiles: {}, // deviceId -> parsed device.json | null (missing/unreadable)
   heartbeats: {}, // deviceId -> ms epoch of device.json Last-Modified
@@ -68,6 +70,8 @@ export default (state = initialState, action) => {
         partialSource: action.source || null,
         partialBlockers: action.blockers || [],
         partialNotes: action.notes || [],
+        loadedFirmware: null, // mutually exclusive with the firmware flow
+        activeTab: "config",
         selected: {},
         evaluations: {},
         query: "",
@@ -131,6 +135,40 @@ export default (state = initialState, action) => {
 
     case actions.SET_CONFIRM_OPEN:
       return { ...state, confirmOpen: action.open };
+
+    case actions.SET_ACTIVE_TAB:
+      return { ...state, activeTab: action.tab };
+
+    case actions.SET_FIRMWARE:
+      // loading a firmware.bin is mutually exclusive with the config/encrypt
+      // flow: clear the partial + encrypt toggle and reset the working set
+      // (mirrors SET_PARTIAL). Bulky bytes/schema live in cache.js.
+      return {
+        ...state,
+        loadedFirmware: action.firmware,
+        activeTab: "fw",
+        partial: null,
+        partialDeletions: [],
+        partialSource: null,
+        partialBlockers: [],
+        partialNotes: [],
+        encryptPasswords: false,
+        selected: {},
+        evaluations: {},
+        query: "",
+        confirmOpen: false,
+        run: initialRun
+      };
+
+    case actions.CLEAR_FIRMWARE:
+      return {
+        ...state,
+        loadedFirmware: null,
+        selected: {},
+        evaluations: {},
+        confirmOpen: false,
+        run: initialRun
+      };
 
     case actions.RUN_START: {
       const deviceStatus = {};

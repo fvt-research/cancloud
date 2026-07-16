@@ -3,7 +3,11 @@ import { connect } from "react-redux";
 
 import * as actions from "./actions";
 import CollapsiblePreview from "./CollapsiblePreview";
-import { getAggregatedWarnings, getEncryptActive } from "./selectors";
+import {
+  getAggregatedWarnings,
+  getEncryptActive,
+  getFirmwareActive
+} from "./selectors";
 
 // Pre-submission confirmation: the user must see exactly what goes where and
 // explicitly acknowledge before any PUT happens
@@ -15,7 +19,8 @@ export class ConfirmSubmitModal extends React.Component {
       verifiedOnOne: false,
       previewOpen: false,
       targetsOpen: false,
-      fieldsOpen: false
+      fieldsOpen: false,
+      fwOpen: false
     };
   }
 
@@ -26,15 +31,50 @@ export class ConfirmSubmitModal extends React.Component {
         verifiedOnOne: false,
         previewOpen: false,
         targetsOpen: false,
-        fieldsOpen: false
+        fieldsOpen: false,
+        fwOpen: false
       });
     }
+  }
+
+  // a hand-rolled accordion matching CollapsiblePreview's look
+  renderCollapsible(open, onToggle, label, lines) {
+    return (
+      <div style={{ marginTop: "10px" }}>
+        <div
+          onClick={onToggle}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            cursor: "pointer",
+            fontSize: "12px",
+            color: "#999999",
+            userSelect: "none"
+          }}
+        >
+          <i
+            className={open ? "fa fa-angle-down" : "fa fa-angle-right"}
+            style={{ marginRight: "6px", width: "8px" }}
+          />
+          {label}
+        </div>
+        {open ? (
+          <pre
+            className="browse-file-preview"
+            style={{ maxHeight: "200px", overflow: "auto", marginTop: "10px" }}
+          >
+            {lines.join("\n")}
+          </pre>
+        ) : null}
+      </div>
+    );
   }
 
   render() {
     const {
       open,
       encryptActive,
+      firmwareActive,
       partial,
       partialNotes,
       selected,
@@ -49,13 +89,25 @@ export class ConfirmSubmitModal extends React.Component {
 
     const willEncrypt = (ev) =>
       encryptActive && ev && ev.enc && ev.enc.hasPlain && ev.enc.compatible;
-    // only devices that will actually change (partial change and/or encryption)
+    const willFirmware = (ev) => ev && ev.fw && ev.fw.willUpdate;
+    // only devices that will actually change (partial / encryption / firmware)
     const deviceIds = Object.keys(selected)
       .filter((deviceId) => {
         const ev = evaluations[deviceId];
-        return ev && ev.eligible && (ev.partialChanges || willEncrypt(ev));
+        return (
+          ev &&
+          ev.eligible &&
+          (ev.partialChanges || willEncrypt(ev) || willFirmware(ev))
+        );
       })
       .sort();
+    // in a firmware run, a config file is (re)written only for devices that migrate
+    const migrateDeviceIds = firmwareActive
+      ? deviceIds.filter((deviceId) => {
+          const ev = evaluations[deviceId];
+          return ev.fw && ev.fw.willMigrate;
+        })
+      : [];
 
     // per-section encryption counts across the devices that will be encrypted
     const encryptionCounts = {};
@@ -71,7 +123,7 @@ export class ConfirmSubmitModal extends React.Component {
 
     // static label (the title already states whether encryption is applied) so
     // the button width does not jump between modes
-    const submitLabel = "Submit to S3";
+    const submitLabel = firmwareActive ? "Deploy firmware" : "Submit to S3";
 
     return (
       <div className="show modal-custom-wrapper">
@@ -81,7 +133,11 @@ export class ConfirmSubmitModal extends React.Component {
               <span style={{ color: "gray" }}>&times;</span>
             </button>
             <span className="widget-title">
-              {(encryptActive ? "Encrypt & submit to " : "Submit to ") +
+              {(firmwareActive
+                ? "Update firmware on "
+                : encryptActive
+                ? "Encrypt & submit to "
+                : "Submit to ") +
                 deviceIds.length +
                 " device" +
                 (deviceIds.length === 1 ? "" : "s")}
@@ -89,52 +145,60 @@ export class ConfirmSubmitModal extends React.Component {
           </div>
 
           <div className="modal-custom-content ota-confirm-content">
-            {/* same toggle styling as CollapsiblePreview below, for consistency */}
-            <div style={{ marginTop: "10px" }}>
-              <div
-                onClick={() =>
-                  this.setState({ targetsOpen: !this.state.targetsOpen })
-                }
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  cursor: "pointer",
-                  fontSize: "12px",
-                  color: "#999999",
-                  userSelect: "none"
-                }}
-              >
-                <i
-                  className={
-                    this.state.targetsOpen
-                      ? "fa fa-angle-down"
-                      : "fa fa-angle-right"
-                  }
-                  style={{ marginRight: "6px", width: "8px" }}
-                />
-                Show target devices ({deviceIds.length})
+            {firmwareActive ? (
+              <div>
+                {this.renderCollapsible(
+                  this.state.targetsOpen,
+                  () =>
+                    this.setState({ targetsOpen: !this.state.targetsOpen }),
+                  "Configuration files (" + migrateDeviceIds.length + ")",
+                  migrateDeviceIds.map((deviceId) => {
+                    const ev = evaluations[deviceId];
+                    const deviceJson = deviceFiles[deviceId] || {};
+                    return (
+                      deviceId +
+                      "/" +
+                      ev.fw.targetConfigName +
+                      (deviceJson.log_meta
+                        ? "  (" + deviceJson.log_meta + ")"
+                        : "")
+                    );
+                  })
+                )}
+                {this.renderCollapsible(
+                  this.state.fwOpen,
+                  () => this.setState({ fwOpen: !this.state.fwOpen }),
+                  "Firmware (" + deviceIds.length + ")",
+                  deviceIds.map((deviceId) => {
+                    const deviceJson = deviceFiles[deviceId] || {};
+                    return (
+                      deviceId +
+                      "/firmware.bin" +
+                      (deviceJson.log_meta
+                        ? "  (" + deviceJson.log_meta + ")"
+                        : "")
+                    );
+                  })
+                )}
               </div>
-              {this.state.targetsOpen ? (
-                <pre
-                  className="browse-file-preview"
-                  style={{ maxHeight: "200px", overflow: "auto", marginTop: "10px" }}
-                >
-                  {deviceIds
-                    .map((deviceId) => {
-                      const deviceJson = deviceFiles[deviceId] || {};
-                      return (
-                        deviceId +
-                        "/" +
-                        (deviceJson.cfg_name || "?") +
-                        (deviceJson.log_meta
-                          ? "  (" + deviceJson.log_meta + ")"
-                          : "")
-                      );
-                    })
-                    .join("\n")}
-                </pre>
-              ) : null}
-            </div>
+            ) : (
+              this.renderCollapsible(
+                this.state.targetsOpen,
+                () => this.setState({ targetsOpen: !this.state.targetsOpen }),
+                "Show target devices (" + deviceIds.length + ")",
+                deviceIds.map((deviceId) => {
+                  const deviceJson = deviceFiles[deviceId] || {};
+                  return (
+                    deviceId +
+                    "/" +
+                    (deviceJson.cfg_name || "?") +
+                    (deviceJson.log_meta
+                      ? "  (" + deviceJson.log_meta + ")"
+                      : "")
+                  );
+                })
+              )
+            )}
 
             {partial ? (
               <CollapsiblePreview
@@ -209,7 +273,10 @@ export class ConfirmSubmitModal extends React.Component {
 
             {aggregatedWarnings.length ? (
               <div className="ota-confirm-warnings">
-                <p className="reduced-margin">Warnings</p>
+                <br />
+                <p className="reduced-margin" style={{ fontSize: "12px" }}>
+                  Warnings
+                </p>
                 {aggregatedWarnings.map((warning, index) => (
                   <p className="orange-text ota-panel-note" key={"warn" + index}>
                     <i className="fa fa-exclamation-triangle" /> {warning.message}{" "}
@@ -282,8 +349,15 @@ export class ConfirmSubmitModal extends React.Component {
                 </label>
               </span>
               <span>
-                I understand this will overwrite the Configuration File of{" "}
-                {deviceIds.length} device{deviceIds.length === 1 ? "" : "s"}
+                {firmwareActive
+                  ? "I understand this will update the firmware (and migrate the configuration where needed) of " +
+                    deviceIds.length +
+                    " device" +
+                    (deviceIds.length === 1 ? "" : "s")
+                  : "I understand this will overwrite the Configuration File of " +
+                    deviceIds.length +
+                    " device" +
+                    (deviceIds.length === 1 ? "" : "s")}
               </span>
             </div>
           </div>
@@ -318,6 +392,7 @@ export class ConfirmSubmitModal extends React.Component {
 const mapStateToProps = (state) => ({
   open: state.otaBatch.confirmOpen,
   encryptActive: getEncryptActive(state),
+  firmwareActive: getFirmwareActive(state),
   partial: state.otaBatch.partial,
   partialNotes: state.otaBatch.partialNotes,
   partialSource: state.otaBatch.partialSource,
