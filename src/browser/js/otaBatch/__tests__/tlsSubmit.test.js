@@ -3,9 +3,6 @@
 // certificate object-key whitelist, the fresh re-gate on the (pure) firmware
 // revision, and one 5xx retry with a fresh presigned URL.
 
-// detect-browser returns null under jsdom - mock before config-editor-base
-jest.mock("detect-browser", () => ({ detect: () => ({ name: "chrome" }) }));
-
 // mock only the S3 surface (web) - keep cache/evaluate real
 jest.mock("../../web", () => ({
   __esModule: true,
@@ -25,7 +22,7 @@ jest.mock("../../web", () => ({
 import web from "../../web";
 import * as cache from "../cache";
 import { startRun } from "../submitEngine";
-import { RUN_DEVICE_STATUS } from "../actionTypes";
+import { RUN_DEVICE_STATUS_BATCH } from "../actionTypes";
 import { makeDeviceJson } from "../__fixtures__/otaTestKit";
 
 // minimal scriptable XMLHttpRequest stand-in (mirrors firmwareSubmit.test.js)
@@ -94,10 +91,12 @@ const buildTlsEnv = ({ ids = ["AABBCCDD"], deviceJsonOverrides = {} } = {}) => {
   };
 };
 
+// the engine coalesces status updates into RUN_DEVICE_STATUS_BATCH dispatches
 const statusOf = (actions, deviceId) => {
-  const rows = actions.filter(
-    (a) => a.type === RUN_DEVICE_STATUS && a.deviceId === deviceId
-  );
+  const rows = actions
+    .filter((a) => a.type === RUN_DEVICE_STATUS_BATCH)
+    .reduce((all, a) => all.concat(a.updates), [])
+    .filter((u) => u.deviceId === deviceId);
   return rows[rows.length - 1];
 };
 

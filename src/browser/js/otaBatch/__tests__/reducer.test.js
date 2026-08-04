@@ -125,6 +125,8 @@ describe("otaBatch reducer - encrypt toggle & selection prune", () => {
     expect(s.encryptPasswords).toBe(false);
   });
 
+  // also what makes the editor-transfer pre-selection safe: a seeded source
+  // device that turns out blocked/unchanged is dropped here
   it("SET_EVALUATIONS prunes the selection to eligible devices", () => {
     const s = apply(init(), [
       { type: actions.SET_SELECTION, selected: { A: true, B: true, C: true } },
@@ -167,10 +169,11 @@ describe("otaBatch reducer - partial load/clear reset semantics", () => {
       { type: actions.SET_DEVICE_DATA, devices: ["A"], results: [{ deviceId: "A", content: { id: "A" } }] },
       { type: actions.PATCH_ARTIFACTS, patch: { A: { config: { status: "loaded" } } } },
       { type: actions.SET_SELECTION, selected: { A: true } },
-      { type: actions.SET_QUERY, query: "abc" }
+      { type: actions.SET_QUERY, query: "abc" },
+      { type: actions.SET_SORT, sortBy: "fwVer", sortDesc: true }
     ]);
 
-  it("SET_PARTIAL resets selection/evaluations/query/run but keeps devices + artifacts", () => {
+  it("SET_PARTIAL resets selection/evaluations/run but keeps devices + artifacts", () => {
     const s = reducer(seeded(), {
       type: actions.SET_PARTIAL,
       partial: { a: 1 },
@@ -181,11 +184,14 @@ describe("otaBatch reducer - partial load/clear reset semantics", () => {
     expect(s.partialBlockers).toEqual(["b"]);
     expect(s.selected).toEqual({});
     expect(s.evaluations).toEqual({});
-    expect(s.query).toBe("");
     expect(s.run.active).toBe(false);
     // preserved
     expect(s.devices).toEqual(["A"]);
     expect(s.artifacts.A).toBeDefined();
+    // search + sort are view state: they survive a file load
+    expect(s.query).toBe("abc");
+    expect(s.sortBy).toBe("fwVer");
+    expect(s.sortDesc).toBe(true);
   });
 
   it("CLEAR_PARTIAL drops the partial and resets selection, keeping devices", () => {
@@ -196,6 +202,38 @@ describe("otaBatch reducer - partial load/clear reset semantics", () => {
     expect(s.partialBlockers).toEqual([]);
     expect(s.selected).toEqual({});
     expect(s.devices).toEqual(["A"]);
+  });
+});
+
+describe("otaBatch reducer - column sort", () => {
+  it("defaults to the unsorted device-id order and stores SET_SORT", () => {
+    expect(init().sortBy).toBe("");
+    expect(init().sortDesc).toBe(false);
+    const s = reducer(init(), { type: actions.SET_SORT, sortBy: "meta", sortDesc: true });
+    expect(s.sortBy).toBe("meta");
+    expect(s.sortDesc).toBe(true);
+  });
+});
+
+describe("otaBatch reducer - evaluation progress", () => {
+  it("stores progress, ignores a stale wave's progress, and clears on completion", () => {
+    const s = reducer(init(), {
+      type: actions.SET_EVAL_PROGRESS,
+      token: 0,
+      progress: { done: 40, total: 200 }
+    });
+    expect(s.evalProgress).toEqual({ done: 40, total: 200 });
+
+    // a slice from a superseded wave must not move the counter backwards
+    const stale = reducer(s, {
+      type: actions.SET_EVAL_PROGRESS,
+      token: -1,
+      progress: { done: 8, total: 200 }
+    });
+    expect(stale.evalProgress).toEqual({ done: 40, total: 200 });
+
+    const done = reducer(s, { type: actions.SET_EVALUATIONS, token: 0, evaluations: {} });
+    expect(done.evalProgress).toBeNull();
   });
 });
 
@@ -246,7 +284,8 @@ describe("otaBatch reducer - TLS load/clear + three-way mutual exclusion", () =>
       { type: actions.SET_ENCRYPT_PASSWORDS, value: true },
       { type: actions.SET_FIRMWARE, firmware: fw },
       { type: actions.SET_SELECTION, selected: { A: true } },
-      { type: actions.SET_QUERY, query: "abc" }
+      { type: actions.SET_QUERY, query: "abc" },
+      { type: actions.SET_SORT, sortBy: "status", sortDesc: false }
     ]);
     const s = reducer(dirty, { type: actions.SET_TLS, tls });
     expect(s.loadedTls).toEqual(tls);
@@ -256,8 +295,10 @@ describe("otaBatch reducer - TLS load/clear + three-way mutual exclusion", () =>
     expect(s.loadedFirmware).toBeNull();
     expect(s.selected).toEqual({});
     expect(s.evaluations).toEqual({});
-    expect(s.query).toBe("");
     expect(s.run.active).toBe(false);
+    // view state survives (SET_FIRMWARE mirrors this)
+    expect(s.query).toBe("abc");
+    expect(s.sortBy).toBe("status");
   });
 
   it("SET_PARTIAL and SET_FIRMWARE both clear a loaded TLS bundle", () => {

@@ -5,10 +5,13 @@ import {
   getTlsActive,
   getRows,
   getFilteredRows,
+  getSortedRows,
   getFilteredEligibleRows,
   getCounts,
   getMasterChecked,
-  getAggregatedWarnings
+  getSelectedRows,
+  getAggregatedWarnings,
+  getLoadProgress
 } from "../selectors";
 
 // minimal state slice for the encryption-enablement selectors
@@ -81,9 +84,13 @@ const rowsState = (over = {}) => ({
     deviceFiles: {},
     heartbeats: {},
     artifacts: {},
+    artifactsRequested: false,
     evaluations: {},
+    evalProgress: null,
     selected: {},
     query: "",
+    sortBy: "",
+    sortDesc: false,
     run: { deviceStatus: {} },
     encryptPasswords: false,
     ...over
@@ -102,7 +109,8 @@ describe("getRows", () => {
     expect(row.meta).toBe("Truck-1");
     expect(row.fwVer).toBe("01.09.01");
     expect(row.heartbeatMs).toBe(1234);
-    expect(row.searchLabel).toBe("aabbccdd truck-1");
+    // the search box also matches type/firmware/status, not just id + meta
+    expect(row.searchLabel).toBe("aabbccdd truck-1 ce2 01.09.01 evaluating pending");
   });
 
   it("resolves config-sync only once the folder crc is known", () => {
@@ -178,6 +186,89 @@ describe("getRows", () => {
   });
 });
 
+describe("getRows row identity (fleet-scale re-render guard)", () => {
+  const fleetState = (over = {}) =>
+    rowsState({
+      devices: ["D1", "D2", "D3"],
+      deviceFiles: { D1: { type: "0000001F" }, D2: { type: "0000001F" }, D3: {} },
+      artifacts: { D1: { config: { crc32: "A" } }, D2: {}, D3: {} },
+      evaluations: {
+        D1: { status: "eligible", eligible: true, partialChanges: true },
+        D2: { status: "eligible", eligible: true, partialChanges: true },
+        D3: { status: "blocked", eligible: false }
+      },
+      ...over
+    });
+
+  it("a run-status change for ONE device leaves the other rows identical", () => {
+    // spread from the same base, exactly as the reducer does - untouched
+    // devices keep their deviceFiles/artifacts/evaluations object identity
+    const base = fleetState();
+    const before = getRows(base);
+    const after = getRows({
+      otaBatch: {
+        ...base.otaBatch,
+        run: { deviceStatus: { D1: { state: "submitting" } } }
+      }
+    });
+    expect(after[0]).not.toBe(before[0]); // D1 rebuilt
+    expect(after[0].runState).toEqual({ state: "submitting" });
+    // D2/D3 must keep their object identity or every PureComponent row in the
+    // table re-renders on every status dispatch (O(n^2) across a run)
+    expect(after[1]).toBe(before[1]);
+    expect(after[2]).toBe(before[2]);
+  });
+
+  it("an artifact patch for ONE device leaves the other rows identical", () => {
+    const base = fleetState();
+    const before = getRows(base);
+    const patched = {
+      otaBatch: {
+        ...base.otaBatch,
+        artifacts: { ...base.otaBatch.artifacts, D2: { config: { crc32: "B" } } }
+      }
+    };
+    const after = getRows(patched);
+    expect(after[1]).not.toBe(before[1]);
+    expect(after[0]).toBe(before[0]);
+    expect(after[2]).toBe(before[2]);
+  });
+
+  it("drops devices that disappear from the fleet", () => {
+    getRows(fleetState());
+    const shrunk = getRows(fleetState({ devices: ["D2"] }));
+    expect(shrunk.map((r) => r.id)).toEqual(["D2"]);
+  });
+});
+
+describe("getLoadProgress", () => {
+  const mk = (artifacts, requested = true) =>
+    getLoadProgress(
+      rowsState({ devices: ["D1", "D2", "D3"], artifacts, artifactsRequested: requested })
+    );
+
+  it("is null before artifacts are requested and once nothing is loading", () => {
+    expect(mk({}, false)).toBeNull();
+    expect(
+      mk({
+        D1: { config: { status: "loaded" } },
+        D2: { config: { status: "loaded" } },
+        D3: { config: { status: "missing" } }
+      })
+    ).toBeNull();
+  });
+
+  it("counts resolved vs still-loading configs while the fetch runs", () => {
+    expect(
+      mk({
+        D1: { config: { status: "loaded" } },
+        D2: { config: { status: "loading" } },
+        D3: { config: { status: "loading" } }
+      })
+    ).toEqual({ done: 1, total: 3 });
+  });
+});
+
 describe("getFirmwareActive / getTlsActive", () => {
   it("reflect whether a firmware.bin / certs_server.p7b is loaded", () => {
     const mk = (over) => ({ otaBatch: { loadedFirmware: null, loadedTls: null, ...over } });
@@ -193,9 +284,9 @@ describe("getFilteredRows / counts / master checkbox", () => {
     rowsState({
       devices: ["AABBCC01", "AABBCC02", "AABBCC03"],
       deviceFiles: {
-        AABBCC01: { type: "0000001F", log_meta: "Truck alpha" },
-        AABBCC02: { type: "0000001F", log_meta: "Truck beta" },
-        AABBCC03: { type: "0000007D", log_meta: "Van gamma" }
+        AABBCC01: { type: "0000001F", log_meta: "Truck alpha", fw_ver: "01.07.07" },
+        AABBCC02: { type: "0000001F", log_meta: "Truck beta", fw_ver: "01.09.01" },
+        AABBCC03: { type: "0000007D", log_meta: "Van gamma", fw_ver: "01.07.07" }
       },
       evaluations: {
         AABBCC01: { status: "eligible", eligible: true, partialChanges: true },
@@ -211,6 +302,50 @@ describe("getFilteredRows / counts / master checkbox", () => {
 
   it("empty query returns all rows", () => {
     expect(getFilteredRows(fleet()).length).toBe(3);
+  });
+
+  it("matches on firmware version, device type and status too", () => {
+    const filter = (query) =>
+      getFilteredRows({ otaBatch: { ...fleet().otaBatch, query } }).map((r) => r.id);
+    expect(filter("01.07.07")).toEqual(["AABBCC01", "AABBCC03"]);
+    expect(filter("ce3g")).toEqual(["AABBCC03"]);
+    expect(filter("ready")).toEqual(["AABBCC01", "AABBCC02"]);
+    expect(filter("incompatible")).toEqual(["AABBCC03"]);
+    // terms still AND across fields - the firmware cohort, minus the blocked one
+    expect(filter("01.07.07 ready")).toEqual(["AABBCC01"]);
+  });
+
+  it("in-scope count and master checkbox follow the filtered set", () => {
+    const s = { otaBatch: { ...fleet().otaBatch, query: "01.07.07" } };
+    expect(getCounts(s)).toEqual({ selected: 0, inScope: 2, total: 3 });
+    // only AABBCC01 of that cohort is eligible -> selecting it checks the master
+    expect(getFilteredEligibleRows(s).map((r) => r.id)).toEqual(["AABBCC01"]);
+    expect(
+      getMasterChecked({ otaBatch: { ...s.otaBatch, selected: { AABBCC01: true } } })
+    ).toBe(true);
+  });
+
+  it("getSortedRows orders the filtered rows and flips on sortDesc", () => {
+    const sorted = (over) =>
+      getSortedRows({ otaBatch: { ...fleet().otaBatch, ...over } }).map((r) => r.id);
+    expect(sorted({})).toEqual(["AABBCC01", "AABBCC02", "AABBCC03"]);
+    // ties (01.07.07) fall back to device id
+    expect(sorted({ sortBy: "fwVer" })).toEqual(["AABBCC01", "AABBCC03", "AABBCC02"]);
+    expect(sorted({ sortBy: "fwVer", sortDesc: true })).toEqual([
+      "AABBCC02",
+      "AABBCC01",
+      "AABBCC03"
+    ]);
+    expect(sorted({ sortBy: "meta", sortDesc: true })).toEqual([
+      "AABBCC03",
+      "AABBCC02",
+      "AABBCC01"
+    ]);
+    // sorting applies after filtering
+    expect(sorted({ query: "truck", sortBy: "meta", sortDesc: true })).toEqual([
+      "AABBCC02",
+      "AABBCC01"
+    ]);
   });
 
   it("filtered-eligible excludes blocked rows", () => {
@@ -232,22 +367,52 @@ describe("getFilteredRows / counts / master checkbox", () => {
   });
 });
 
-describe("getAggregatedWarnings", () => {
-  it("counts each unique warning across 'ready' rows only", () => {
-    const s = rowsState({
-      devices: ["D1", "D2", "D3"],
-      deviceFiles: { D1: {}, D2: {}, D3: {} },
+describe("getSelectedRows / getAggregatedWarnings", () => {
+  const ready = (warnings) => ({
+    status: "eligible",
+    eligible: true,
+    partialChanges: true,
+    warnings
+  });
+
+  const warnFleet = (selected) =>
+    rowsState({
+      devices: ["D1", "D2", "D3", "D4"],
+      deviceFiles: { D1: {}, D2: {}, D3: {}, D4: {} },
       evaluations: {
-        D1: { status: "eligible", eligible: true, partialChanges: true, warnings: ["TLS mismatch"] },
-        D2: { status: "eligible", eligible: true, partialChanges: true, warnings: ["TLS mismatch", "stale"] },
+        D1: ready(["TLS mismatch"]),
+        D2: ready(["TLS mismatch", "stale"]),
         // blocked rows never contribute warnings
-        D3: { status: "blocked", reasons: ["x"], warnings: ["should not count"] }
-      }
+        D3: { status: "blocked", reasons: ["x"], warnings: ["should not count"] },
+        D4: ready(["only D4"])
+      },
+      selected
     });
-    const agg = getAggregatedWarnings(s);
+
+  it("selected rows are the picked ones, independent of the search filter", () => {
+    const s = warnFleet({ D2: true, D4: true });
+    expect(getSelectedRows(s).map((r) => r.id)).toEqual(["D2", "D4"]);
+    expect(
+      getSelectedRows({ otaBatch: { ...s.otaBatch, query: "d4" } }).map((r) => r.id)
+    ).toEqual(["D2", "D4"]);
+  });
+
+  it("counts each unique warning across SELECTED 'ready' rows only", () => {
+    const agg = getAggregatedWarnings(warnFleet({ D1: true, D2: true }));
     expect(agg).toEqual([
       { message: "TLS mismatch", devices: 2 },
       { message: "stale", devices: 1 }
     ]);
+  });
+
+  it("ignores warnings of devices the user is not submitting to", () => {
+    // D4's warning and D1's copy of the shared message must not appear
+    expect(getAggregatedWarnings(warnFleet({ D2: true }))).toEqual([
+      { message: "TLS mismatch", devices: 1 },
+      { message: "stale", devices: 1 }
+    ]);
+    // a selected blocked device contributes nothing
+    expect(getAggregatedWarnings(warnFleet({ D3: true }))).toEqual([]);
+    expect(getAggregatedWarnings(warnFleet({}))).toEqual([]);
   });
 });

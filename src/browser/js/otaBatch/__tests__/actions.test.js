@@ -3,9 +3,6 @@
 // (web + global fetch), the submit engine, history and crypto mocked. cache and
 // evaluate run for real so evaluations are authentic.
 
-// detect-browser returns null under jsdom - mock before config-editor-base
-jest.mock("detect-browser", () => ({ detect: () => ({ name: "chrome" }) }));
-
 jest.mock("../../web", () => ({
   __esModule: true,
   default: {
@@ -45,6 +42,7 @@ import { createStore, combineReducers, applyMiddleware } from "redux";
 import thunk from "redux-thunk";
 
 import web from "../../web";
+import history from "../../history";
 import * as alertActions from "../../alert/actions";
 import { encryptionCrypto, encryptionFields } from "config-editor-tools";
 import otaBatchReducer from "../reducer";
@@ -107,10 +105,13 @@ const deviceJsonFor = (id) => ({
 });
 
 const initial = otaBatchReducer(undefined, { type: "@@INIT" });
-const makeStore = (otaOverrides = {}) =>
+// static buckets slice: receivePartialFromEditor resolves the editor route
+// segment against the sidebar's device-folder list
+const bucketsReducer = (state = { list: [] }) => state;
+const makeStore = (otaOverrides = {}, bucketList = []) =>
   createStore(
-    combineReducers({ otaBatch: otaBatchReducer }),
-    { otaBatch: { ...initial, ...otaOverrides } },
+    combineReducers({ otaBatch: otaBatchReducer, buckets: bucketsReducer }),
+    { otaBatch: { ...initial, ...otaOverrides }, buckets: { list: bucketList } },
     applyMiddleware(thunk)
   );
 
@@ -172,6 +173,71 @@ describe("loadPartialFile", () => {
   });
 });
 
+describe("receivePartialFromEditor", () => {
+  const PARTIAL = { connect: { s3: { server: { port: 443 } } } };
+
+  // transfer from the editor of `route`, with `bucketList` in the sidebar
+  const transfer = async (route, bucketList) => {
+    history.location.pathname = route;
+    history.push.mockClear();
+    const store = makeStore({}, bucketList);
+    await store.dispatch(
+      actions.receivePartialFromEditor({
+        partial: PARTIAL,
+        deletions: [],
+        configName: "config-01.09.json"
+      })
+    );
+    return store.getState().otaBatch;
+  };
+
+  it("records the editor source and pre-selects the source device", async () => {
+    const s = await transfer("/configuration/AABBCC01", ["AABBCC01", "AABBCC02"]);
+    expect(s.partial).toEqual(PARTIAL);
+    expect(s.partialSource).toEqual({
+      kind: "editor",
+      deviceId: "AABBCC01",
+      configName: "config-01.09.json",
+      revision: "01.09"
+    });
+    expect(s.selected).toEqual({ AABBCC01: true });
+    expect(history.push).toHaveBeenCalledWith("/ota-batch-manager/");
+  });
+
+  it("resolves a lower-case or trailing-slash route to the canonical folder id", async () => {
+    const lower = await transfer("/configuration/aabbcc01", ["AABBCC01"]);
+    expect(lower.selected).toEqual({ AABBCC01: true });
+    expect(lower.partialSource.deviceId).toBe("AABBCC01");
+
+    const slash = await transfer("/configuration/AABBCC01/", ["AABBCC01"]);
+    expect(slash.selected).toEqual({ AABBCC01: true });
+    expect(slash.partialSource.deviceId).toBe("AABBCC01");
+  });
+
+  it("selects nothing when there is no device to resolve", async () => {
+    // simple-editor mode (no device in the route)
+    const simple = await transfer("/configuration", ["AABBCC01"]);
+    expect(simple.selected).toEqual({});
+    expect(simple.partialSource.deviceId).toBeNull();
+
+    // not a device folder
+    const other = await transfer("/configuration/not-a-device", ["AABBCC01"]);
+    expect(other.selected).toEqual({});
+
+    // a device route, but that folder is not in the bucket - the chip still
+    // names it, nothing is selected
+    const absent = await transfer("/configuration/EE7E57FF", ["AABBCC01"]);
+    expect(absent.selected).toEqual({});
+    expect(absent.partialSource.deviceId).toBe("EE7E57FF");
+  });
+
+  it("a file-loaded partial never pre-selects a device", async () => {
+    const store = makeStore({}, ["AABBCC01"]);
+    await store.dispatch(actions.loadPartialFile("p.json", JSON.stringify(PARTIAL)));
+    expect(store.getState().otaBatch.selected).toEqual({});
+  });
+});
+
 describe("evaluateAll", () => {
   it("produces an eligible evaluation for a valid partial change", () => {
     const id = "AABBCCDD";
@@ -191,6 +257,37 @@ describe("evaluateAll", () => {
     expect(evalr.partialChanges).toBe(true);
   });
 
+  it("evaluates a whole fleet in time slices (must be awaited)", async () => {
+    // 40 devices: enough that the 40ms slices yield at least once on any
+    // machine slow enough to matter. The perf harness measures the slicing
+    // itself; here we only pin that nothing is lost across the yields.
+    const ids = Array.from({ length: 40 }, (unused, n) =>
+      "AABB" + n.toString(16).toUpperCase().padStart(4, "0")
+    );
+    const deviceFiles = {};
+    const artifacts = {};
+    ids.forEach((id) => {
+      const seeded = seedLoaded(id);
+      deviceFiles[id] = seeded.deviceFile;
+      artifacts[id] = seeded.artifact;
+    });
+    const store = makeStore({
+      devices: ids,
+      devicesLoaded: true,
+      deviceFiles,
+      artifacts,
+      partial: { connect: { s3: { server: { endpoint: "http://new-host" } } } }
+    });
+
+    await store.dispatch(actions.evaluateAll());
+
+    const st = store.getState().otaBatch;
+    expect(Object.keys(st.evaluations).length).toBe(ids.length);
+    expect(ids.every((id) => st.evaluations[id].eligible)).toBe(true);
+    // the progress line disappears once the wave completes
+    expect(st.evalProgress).toBeNull();
+  });
+
   it("suppresses evaluation entirely when the partial has batch blockers", () => {
     const id = "AABBCCDD";
     const { deviceFile, artifact } = seedLoaded(id);
@@ -204,6 +301,105 @@ describe("evaluateAll", () => {
     });
     store.dispatch(actions.evaluateAll());
     expect(store.getState().otaBatch.evaluations).toEqual({});
+  });
+});
+
+describe("async evaluation wave (promise chaining + merged-result stability)", () => {
+  // advance the clock 30ms per Date.now() call so every slice budget (40ms) is
+  // exhausted after ~1 device - the wave is forced to yield regardless of
+  // machine speed, making these regressions deterministic
+  let nowSpy = null;
+  const installSlicedClock = () => {
+    let t = 1700000000000;
+    nowSpy = jest.spyOn(Date, "now").mockImplementation(() => (t += 30));
+  };
+  afterEach(() => {
+    if (nowSpy) nowSpy.mockRestore();
+    nowSpy = null;
+  });
+
+  const fleet = (n) =>
+    Array.from({ length: n }, (unused, i) =>
+      "AABB" + i.toString(16).toUpperCase().padStart(4, "0")
+    );
+
+  it("refreshConfigs resolves only after the new evaluations land", async () => {
+    // retryFailed (and the Refresh spinner) chain on refreshConfigs and read
+    // evaluations in the .then - resolving before SET_EVALUATIONS hands them
+    // stale baselines ("submitted" without a write, drift retries that can
+    // never succeed)
+    const ids = fleet(6);
+    const deviceFiles = {};
+    ids.forEach((id) => {
+      deviceFiles[id] = deviceJsonFor(id);
+    });
+    const configText = JSON.stringify(baseConfig("http://s3.example.com"), null, 2);
+    global.fetch = jest.fn((url) =>
+      Promise.resolve({
+        ok: true,
+        text: () =>
+          Promise.resolve(
+            url.indexOf("/schema-") > -1 ? JSON.stringify(SCHEMA) : configText
+          )
+      })
+    );
+    const store = makeStore({
+      devices: ids,
+      devicesLoaded: true,
+      deviceFiles,
+      partial: { connect: { s3: { server: { endpoint: "http://target" } } } }
+    });
+    let progressSeen = false;
+    const unsubscribe = store.subscribe(() => {
+      if (store.getState().otaBatch.evalProgress) progressSeen = true;
+    });
+
+    installSlicedClock();
+    await store.dispatch(actions.refreshConfigs(ids));
+    unsubscribe();
+
+    const st = store.getState().otaBatch;
+    expect(Object.keys(st.evaluations).length).toBe(ids.length);
+    expect(ids.every((id) => st.evaluations[id].partialChanges)).toBe(true);
+    expect(progressSeen).toBe(true); // the wave really spanned slices
+    expect(st.evalProgress).toBeNull();
+  });
+
+  it("keeps the previous wave's merged results readable until the new wave completes", async () => {
+    // downloadNewConfig reads the merged-result cache; clearing it at wave
+    // start would silently serve the raw config (partial NOT applied) for the
+    // duration of a chunked wave
+    const ids = fleet(4);
+    const deviceFiles = {};
+    const artifacts = {};
+    ids.forEach((id) => {
+      const seeded = seedLoaded(id);
+      deviceFiles[id] = seeded.deviceFile;
+      artifacts[id] = seeded.artifact;
+    });
+    const store = makeStore({
+      devices: ids,
+      devicesLoaded: true,
+      deviceFiles,
+      artifacts,
+      partial: { connect: { s3: { server: { endpoint: "http://new-host" } } } }
+    });
+
+    await store.dispatch(actions.evaluateAll()); // wave 1
+    const before = ids.map((id) => cache.getMergedResult(id));
+    expect(before.every(Boolean)).toBe(true);
+
+    installSlicedClock();
+    const wave2 = store.dispatch(actions.evaluateAll());
+    // mid-wave: wave 1's post-merge results must still be what a download gets
+    expect(store.getState().otaBatch.evalProgress).not.toBeNull();
+    ids.forEach((id, i) => expect(cache.getMergedResult(id)).toBe(before[i]));
+
+    await wave2;
+    ids.forEach((id, i) => {
+      expect(cache.getMergedResult(id)).toBeDefined();
+      expect(cache.getMergedResult(id)).not.toBe(before[i]);
+    });
   });
 });
 
@@ -339,6 +535,19 @@ describe("clearPartial re-evaluation", () => {
     // empty; an empty map renders every row as "Evaluating" until a refresh
     expect(st.evaluations[id]).toBeDefined();
     expect(st.evaluations[id].partialChanges).toBe(false);
+  });
+});
+
+describe("toggleSort", () => {
+  it("sorts a new column ascending and flips the same column", () => {
+    const store = makeStore();
+    store.dispatch(actions.toggleSort("fwVer"));
+    expect(store.getState().otaBatch).toMatchObject({ sortBy: "fwVer", sortDesc: false });
+    store.dispatch(actions.toggleSort("fwVer"));
+    expect(store.getState().otaBatch.sortDesc).toBe(true);
+    // switching column starts ascending again
+    store.dispatch(actions.toggleSort("meta"));
+    expect(store.getState().otaBatch).toMatchObject({ sortBy: "meta", sortDesc: false });
   });
 });
 

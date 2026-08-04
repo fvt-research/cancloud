@@ -3,6 +3,7 @@ import { connect } from "react-redux";
 
 import web from "../web";
 import * as actions from "./actions";
+import { getEncryptActive } from "./selectors";
 import LeftPanel from "./LeftPanel";
 import EncryptPanel from "./EncryptPanel";
 import FwPanel from "./FwPanel";
@@ -48,11 +49,14 @@ export class OtaBatchSection extends React.Component {
       loadedFirmware,
       loadedTls,
       partial,
-      encryptPasswords,
+      encryptActive,
       runActive,
       setActiveTab
     } = this.props;
-    const hasConfigState = !!partial || !!encryptPasswords;
+    // the EFFECTIVE encrypt state, not the raw toggle: a leftover
+    // encryptPasswords flag with no eligible selection renders as an unticked
+    // checkbox, and must not keep the firmware/TLS tabs greyed out
+    const hasConfigState = !!partial || encryptActive;
 
     if (!web.LoggedIn()) {
       return (
@@ -148,7 +152,7 @@ const mapStateToProps = (state) => ({
   loadedFirmware: state.otaBatch.loadedFirmware,
   loadedTls: state.otaBatch.loadedTls,
   partial: state.otaBatch.partial,
-  encryptPasswords: state.otaBatch.encryptPasswords,
+  encryptActive: getEncryptActive(state),
   runActive: state.otaBatch.run.active
 });
 

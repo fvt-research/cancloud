@@ -3,10 +3,6 @@
 // the full matrix: wrong type, already-on-target, patch-only, migrate-up,
 // downgrade-block, and unsupported source revision.
 
-// detect-browser returns null under jsdom; evaluate.js imports config-editor-base
-// (whose utils.js dereferences detect().name at import) - mock it first
-jest.mock("detect-browser", () => ({ detect: () => ({ name: "chrome" }) }));
-
 import { firmwareGate } from "../evaluate";
 import { DEVICE_FAMILIES, makeDeviceJson } from "../__fixtures__/otaTestKit";
 

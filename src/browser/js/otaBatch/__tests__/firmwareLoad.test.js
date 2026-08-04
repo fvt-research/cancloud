@@ -3,9 +3,6 @@
 // trio (firmwareSpan/parseFirmwareBin/checkKnownFirmware) and the bundled
 // schema lookup (loadFile) are mocked - everything else runs for real.
 
-// detect-browser returns null under jsdom - mock before config-editor-base
-jest.mock("detect-browser", () => ({ detect: () => ({ name: "chrome" }) }));
-
 jest.mock("../../web", () => ({
   __esModule: true,
   default: {

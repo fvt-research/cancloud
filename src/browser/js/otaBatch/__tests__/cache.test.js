@@ -1,7 +1,6 @@
 // Module-cache unit tests. cache.js holds the raw config text/parsed, the
 // content-hash-deduped schema validators, and the crc32 recipe that the drift
-// check and the config-synced column both key off. No config-editor-base import
-// here, so no detect-browser mock is needed.
+// check and the config-synced column both key off.
 
 import Ajv from "ajv";
 import * as cache from "../cache";

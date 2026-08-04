@@ -17,9 +17,6 @@
 //      safe; mirrors config-editor-tools encryptionFields.test.js)
 //   B. a small evaluateDevice end-to-end pass on a cleaned, schema-valid baseline
 
-// detect-browser returns null under jsdom - mock before config-editor-base
-jest.mock("detect-browser", () => ({ detect: () => ({ name: "chrome" }) }));
-
 import { encryptionFields } from "config-editor-tools";
 
 import {

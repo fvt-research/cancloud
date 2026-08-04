@@ -77,6 +77,12 @@ export const clearMergedResults = () => {
   mergedResults = new Map();
 };
 
+// atomic swap at the end of an evaluation wave - the previous wave's results
+// stay readable (downloadNewConfig) while the chunked evaluation runs
+export const replaceMergedResults = (map) => {
+  mergedResults = map;
+};
+
 // the single loaded firmware for a FW batch: raw File (for the binary PUT), the
 // parsed header, the firmware's embedded default config, and the official dist
 // targetSchema resolved via loadFile (reused as migrateConfig's targetSchema)

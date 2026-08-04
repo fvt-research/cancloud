@@ -136,7 +136,7 @@ const DeviceTable = (props) => {
     uploadedMb: "MB uploaded",
     storageUsed: "SD storage used",
     storageUsedAbs: "SD used vs total",
-    configSync: "Config synced",
+    configSync: "Config sync",
     lastLogUpload: "Last log upload",
   };
 

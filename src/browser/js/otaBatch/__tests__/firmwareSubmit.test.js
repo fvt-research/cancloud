@@ -4,9 +4,6 @@
 // firmware object-key whitelist, the "config landed but firmware failed"
 // partial-failure message, and a fresh presigned URL per upload attempt.
 
-// detect-browser returns null under jsdom - mock before config-editor-base
-jest.mock("detect-browser", () => ({ detect: () => ({ name: "chrome" }) }));
-
 // mock only the S3 surface (web) - keep cache/evaluate/migration real
 jest.mock("../../web", () => ({
   __esModule: true,
@@ -24,7 +21,7 @@ import web from "../../web";
 import { migration } from "config-editor-tools";
 import * as cache from "../cache";
 import { startRun } from "../submitEngine";
-import { RUN_DEVICE_STATUS } from "../actionTypes";
+import { RUN_DEVICE_STATUS_BATCH } from "../actionTypes";
 import {
   loadSchema,
   makeCleanBaseline,
@@ -132,10 +129,12 @@ const buildFwEnv = ({
   };
 };
 
+// the engine coalesces status updates into RUN_DEVICE_STATUS_BATCH dispatches
 const statusOf = (actions, deviceId) => {
-  const rows = actions.filter(
-    (a) => a.type === RUN_DEVICE_STATUS && a.deviceId === deviceId
-  );
+  const rows = actions
+    .filter((a) => a.type === RUN_DEVICE_STATUS_BATCH)
+    .reduce((all, a) => all.concat(a.updates), [])
+    .filter((u) => u.deviceId === deviceId);
   return rows[rows.length - 1];
 };
 

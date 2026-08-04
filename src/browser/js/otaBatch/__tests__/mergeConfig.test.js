@@ -3,9 +3,6 @@
 // array-OVERWRITE semantics are a deliberate, safety-relevant choice - and also
 // the most likely way a careless partial silently wipes fleet data, so pin it.
 
-// detect-browser returns null under jsdom - mock before config-editor-base
-jest.mock("detect-browser", () => ({ detect: () => ({ name: "chrome" }) }));
-
 import { mergeConfig } from "../evaluate";
 
 describe("mergeConfig array-overwrite semantics", () => {

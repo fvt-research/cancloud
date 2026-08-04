@@ -1,7 +1,3 @@
-// detect-browser returns null under jsdom's user agent - mock it before
-// config-editor-base (whose utils.js dereferences detect().name at import)
-jest.mock("detect-browser", () => ({ detect: () => ({ name: "chrome" }) }));
-
 import {
   analyzePartial,
   evaluateDevice,

@@ -26,6 +26,12 @@ export const TLS_MAX_FILE_SIZE = 262144;
 // bounded concurrency for the batch submission run
 export const SUBMIT_CONCURRENCY = 5;
 
+// per-device run-status updates are coalesced into one dispatch per this window.
+// Every dispatch re-renders the table, and an abort rejects every queued device
+// at once - dispatching those one by one froze the tab for ~20s on a 200-device
+// fleet. 8 updates/second still reads as live progress.
+export const STATUS_FLUSH_MS = 120;
+
 // heartbeat older than this raises a non-blocking warning
 export const STALE_HEARTBEAT_MS = 7 * 24 * 60 * 60 * 1000;
 

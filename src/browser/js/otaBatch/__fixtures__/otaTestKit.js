@@ -1,12 +1,6 @@
 // Shared test kit for the OTA batch manager suite. Lives under __fixtures__/
 // (NOT __tests__/) so jest's testMatch does not collect it as an empty suite.
-//
-// IMPORTANT: any test file that imports helpers which transitively load
-// config-editor-base/-tools (mergeConfig, evaluateDevice, editorActions, ...)
-// MUST declare, before its imports:
-//   jest.mock("detect-browser", () => ({ detect: () => ({ name: "chrome" }) }))
-// This kit itself only pulls ajv / @rjsf / deepmerge / crc-based cache, none of
-// which need that mock - so cache-only tests can import it freely.
+// Pulls only ajv / @rjsf / deepmerge / crc-based cache - no config-editor-base.
 
 import Ajv from "ajv";
 import validatorAjv6 from "@rjsf/validator-ajv6";

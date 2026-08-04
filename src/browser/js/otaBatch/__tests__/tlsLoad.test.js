@@ -2,9 +2,6 @@
 // transitions. Real store/reducer/cache/evaluate; the firmware parsing trio is
 // mocked only for the firmware-load-clears-TLS direction.
 
-// detect-browser returns null under jsdom - mock before config-editor-base
-jest.mock("detect-browser", () => ({ detect: () => ({ name: "chrome" }) }));
-
 jest.mock("../../web", () => ({
   __esModule: true,
   default: {

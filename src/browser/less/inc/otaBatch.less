@@ -191,12 +191,29 @@
         }
     }
 
+    .ota-progress {
+        margin-left: auto;
+        font-size: 12px;
+        color: @blue;
+        padding-left: 15px;
+        white-space: nowrap;
+
+        .fa {
+            margin-right: 4px;
+        }
+    }
+
     .ota-counts {
         margin-left: auto;
         font-size: 12px;
         color: #8e8e8e;
         padding-left: 15px;
         white-space: nowrap;
+    }
+
+    // when both are shown the progress line takes the free space
+    .ota-progress + .ota-counts {
+        margin-left: 0;
     }
 
     .ota-refresh-btn {
@@ -234,13 +251,54 @@
     table {
         table-layout: fixed;
         width: 100%;
+        // sum of the fixed column widths + the Status header's own minimum: below
+        // this the table scrolls horizontally instead of wrapping headers
+        min-width: 820px;
         font-size: 12px;
         color: #8e8e8e;
         margin-bottom: 0;
     }
     th {
-        white-space: normal;
+        white-space: nowrap;
         vertical-align: bottom;
+    }
+    // Sticky header, two separate reasons rows used to show through it:
+    // 1. the greyed-out ineligible rows set opacity < 1, which creates a
+    //    stacking context - a z-index:auto sticky thead paints UNDER those
+    //    (they come later in the DOM), so the thead needs an explicit z-index
+    // 2. .table-background is translucent, so the cells need their own opaque
+    //    background rather than relying on the table's
+    thead {
+        position: sticky;
+        top: 0;
+        z-index: 3;
+    }
+    thead th {
+        background-color: #fff;
+    }
+    th.ota-sortable {
+        cursor: pointer;
+        user-select: none;
+
+        .ota-sort-icon {
+            margin-left: 3px;
+            opacity: 0;
+            transition: opacity 0.2s ease-in;
+        }
+        &:hover {
+            color: @blue;
+
+            .ota-sort-icon {
+                opacity: 0.5;
+            }
+        }
+        &.ota-sorted {
+            color: @blue;
+
+            .ota-sort-icon {
+                opacity: 1;
+            }
+        }
     }
     td {
         white-space: nowrap;

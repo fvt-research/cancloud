@@ -4,13 +4,36 @@ import Moment from "moment";
 
 import * as actions from "./actions";
 import {
-  getFilteredRows,
+  getSortedRows,
   getFilteredEligibleRows,
   getCounts,
-  getMasterChecked
+  getMasterChecked,
+  getLoadProgress
 } from "./selectors";
 import { RENDER_CAP } from "./constants";
 import { renderEncryptionLock } from "../encryptionLock";
+
+// key = the rowSort.js sort key (null -> not sortable); no width -> flexes.
+// Every width is >= the header's own single-line need INCLUDING the sort caret
+// (measured), so no header ever wraps to a second line; the sum plus Status'
+// minimum is the table's min-width in otaBatch.less.
+const COLUMNS = [
+  { key: "id", label: "Device ID", width: 80 },
+  { key: "type", label: "Type", width: 56 },
+  { key: "meta", label: "Config meta", width: 92 },
+  {
+    key: "sec",
+    label: "Sec",
+    width: 46,
+    title: "Current password encryption state"
+  },
+  { key: "heartbeat", label: "Last heartbeat", width: 104 },
+  { key: "age", label: "Time since", width: 84 },
+  { key: "fwVer", label: "Firmware", width: 78 },
+  { key: "configSync", label: "Config sync", width: 94 },
+  { key: null, label: "New config", width: 90 },
+  { key: "status", label: "Status" }
+];
 
 const formatAge = (min) =>
   min < 60
@@ -272,28 +295,58 @@ export class OtaDeviceTable extends React.Component {
     setSelection(next);
   };
 
+  renderHeader(column) {
+    const { sortBy, sortDesc, toggleSort } = this.props;
+    const style = column.width ? { width: column.width } : undefined;
+
+    if (!column.key) {
+      return (
+        <th key={column.label} style={style}>
+          {column.label}
+        </th>
+      );
+    }
+
+    const active = sortBy === column.key;
+    const icon = active ? (sortDesc ? "fa-caret-down" : "fa-caret-up") : "fa-sort";
+    return (
+      <th
+        key={column.key}
+        style={style}
+        className={"ota-sortable" + (active ? " ota-sorted" : "")}
+        title={(column.title ? column.title + " - " : "") + "Sort by " + column.label}
+        onClick={() => toggleSort(column.key)}
+      >
+        {column.label}
+        <i className={"fa ota-sort-icon " + icon} />
+      </th>
+    );
+  }
+
   render() {
     const {
-      filteredRows,
+      visibleRows,
       filteredEligibleRows,
       counts,
       masterChecked,
       query,
       selected,
       runActive,
+      loadProgress,
+      evalProgress,
       setQuery,
       toggleSelect,
       downloadNewConfig
     } = this.props;
 
-    const rows = filteredRows.slice(0, RENDER_CAP);
-    const capped = filteredRows.length > RENDER_CAP;
+    const rows = visibleRows.slice(0, RENDER_CAP);
+    const capped = visibleRows.length > RENDER_CAP;
 
     // bucket "now" to the minute so age bars stay stable across re-renders
     // (preserves DeviceRow's PureComponent memoization)
     const nowMs = Math.floor(Date.now() / 60000) * 60000;
     let maxAgeMin = 0;
-    filteredRows.forEach((r) => {
+    visibleRows.forEach((r) => {
       if (r.heartbeatMs) {
         const a = (nowMs - r.heartbeatMs) / 60000;
         if (a > maxAgeMin) maxAgeMin = a;
@@ -306,10 +359,25 @@ export class OtaDeviceTable extends React.Component {
           <input
             type="search"
             className="ota-search"
-            placeholder="Search devices (ID or meta) ..."
+            placeholder="Search devices (ID, meta, type, firmware, status) ..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
+          {/* say what the view is waiting for - on a large fleet the config
+              fetch and the evaluation each take a while, and silent
+              "Evaluating ..." rows look like a hang */}
+          {loadProgress ? (
+            <span className="ota-progress">
+              <i className="fa fa-circle-o-notch fa-spin" /> Loading configs{" "}
+              {loadProgress.done} / {loadProgress.total} ...
+            </span>
+          ) : evalProgress ? (
+            <span className="ota-progress">
+              <i className="fa fa-circle-o-notch fa-spin" /> Evaluating{" "}
+              {evalProgress.done} / {evalProgress.total} devices ...
+            </span>
+          ) : null}
+
           <span className="ota-counts">
             selected: {counts.selected} | in scope: {counts.inScope} | total:{" "}
             {counts.total}
@@ -348,18 +416,7 @@ export class OtaDeviceTable extends React.Component {
                     onChange={this.onMasterToggle}
                   />
                 </th>
-                <th style={{ width: 80 }}>Device ID</th>
-                <th style={{ width: 54 }}>Type</th>
-                <th style={{ width: 92 }}>Config meta</th>
-                <th style={{ width: 40 }} title="Current password encryption state">
-                  Sec
-                </th>
-                <th style={{ width: 108 }}>Last heartbeat</th>
-                <th style={{ width: 90 }}>Time since</th>
-                <th style={{ width: 72 }}>Firmware</th>
-                <th style={{ width: 96 }}>Config synced</th>
-                <th style={{ width: 96 }}>New config</th>
-                <th>Status</th>
+                {COLUMNS.map((column) => this.renderHeader(column))}
               </tr>
             </thead>
             <tbody>
@@ -391,17 +448,22 @@ export class OtaDeviceTable extends React.Component {
 }
 
 const mapStateToProps = (state) => ({
-  filteredRows: getFilteredRows(state),
+  visibleRows: getSortedRows(state),
   filteredEligibleRows: getFilteredEligibleRows(state),
   counts: getCounts(state),
   masterChecked: getMasterChecked(state),
   query: state.otaBatch.query,
+  sortBy: state.otaBatch.sortBy,
+  sortDesc: state.otaBatch.sortDesc,
   selected: state.otaBatch.selected,
-  runActive: state.otaBatch.run.active
+  runActive: state.otaBatch.run.active,
+  loadProgress: getLoadProgress(state),
+  evalProgress: state.otaBatch.evalProgress
 });
 
 const mapDispatchToProps = (dispatch) => ({
   setQuery: (query) => dispatch(actions.setQuery(query)),
+  toggleSort: (sortBy) => dispatch(actions.toggleSort(sortBy)),
   toggleSelect: (deviceId) => dispatch(actions.toggleSelect(deviceId)),
   setSelection: (selected) => dispatch(actions.setSelection(selected)),
   downloadNewConfig: (deviceId) => dispatch(actions.downloadNewConfig(deviceId)),

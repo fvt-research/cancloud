@@ -69,9 +69,9 @@ export class TlsPanel extends React.Component {
             </div>
             <p className="orange-text ota-panel-note">
               <i className="fa fa-exclamation-triangle" /> Devices must be able
-              to connect to the server both before and after the update - during
-              a certificate transition, include the current and the new server
-              certificates in the bundle
+              to connect to the server both before and after the update. If you
+              are performing a TLS certificate transition, include the current
+              and the new server certificates in the bundle.
             </p>
           </div>
         )}

@@ -2,9 +2,6 @@
 // only by the device's reported firmware revision (safety precaution) on top
 // of the shared base gates - no config merge, migration or validation.
 
-// detect-browser returns null under jsdom; evaluate.js imports config-editor-base
-jest.mock("detect-browser", () => ({ detect: () => ({ name: "chrome" }) }));
-
 import { tlsGate, evaluateDevice } from "../evaluate";
 import * as cache from "../cache";
 import { makeDeviceJson } from "../__fixtures__/otaTestKit";

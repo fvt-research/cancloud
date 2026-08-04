@@ -9,6 +9,23 @@ const initialRun = {
   failed: 0
 };
 
+// one device's run status + the cumulative finished/failed accounting (a device
+// can be re-queued by the retry path, so a prior terminal state is un-counted)
+const applyDeviceStatus = (run, { deviceId, state, message }) => {
+  const prev = run.deviceStatus[deviceId];
+  const wasFinal = prev && (prev.state === "submitted" || prev.state === "error");
+  const isFinal = state === "submitted" || state === "error";
+  return {
+    ...run,
+    deviceStatus: { ...run.deviceStatus, [deviceId]: { state, message } },
+    finished: run.finished + (isFinal && !wasFinal ? 1 : 0),
+    failed:
+      run.failed +
+      (state === "error" && !wasFinal ? 1 : 0) -
+      (wasFinal && prev.state === "error" && state !== "error" ? 1 : 0)
+  };
+};
+
 const initialState = {
   encryptPasswords: false, // encrypt all plain-text passwords in the (post-merge) config
   partial: null, // parsed partial config object
@@ -27,8 +44,12 @@ const initialState = {
   artifactsRequested: false,
   evaluations: {}, // deviceId -> { status, eligible, reasons, warnings, targetName, baselineCrc32, partialChanges, currentEncStatus, enc }
   evalToken: 0,
+  evalProgress: null, // { done, total } while a chunked evaluation is running
   selected: {}, // deviceId -> true
+  // view state: kept while the user stays in the view (only RESET clears it)
   query: "",
+  sortBy: "", // "" -> the device-id order of state.devices
+  sortDesc: false,
   confirmOpen: false,
   run: initialRun
 };
@@ -64,6 +85,8 @@ export default (state = initialState, action) => {
     }
 
     case actions.SET_PARTIAL:
+      // search + sort deliberately survive a file load (here and in SET_FIRMWARE
+      // /SET_TLS): the user filters to a cohort first, then loads the file for it
       return {
         ...state,
         partial: action.partial,
@@ -76,7 +99,6 @@ export default (state = initialState, action) => {
         activeTab: "config",
         selected: {},
         evaluations: {},
-        query: "",
         confirmOpen: false,
         run: initialRun
       };
@@ -113,14 +135,29 @@ export default (state = initialState, action) => {
           selected[deviceId] = true;
         }
       });
-      return { ...state, evaluations: action.evaluations, selected };
+      return {
+        ...state,
+        evaluations: action.evaluations,
+        selected,
+        evalProgress: null
+      };
     }
+
+    case actions.SET_EVAL_PROGRESS:
+      // stale slice from a superseded wave - ignore rather than show its count
+      if (action.token !== undefined && action.token !== state.evalToken) {
+        return state;
+      }
+      return { ...state, evalProgress: action.progress };
 
     case actions.BUMP_EVAL_TOKEN:
       return { ...state, evalToken: state.evalToken + 1 };
 
     case actions.SET_QUERY:
       return { ...state, query: action.query };
+
+    case actions.SET_SORT:
+      return { ...state, sortBy: action.sortBy, sortDesc: action.sortDesc };
 
     case actions.TOGGLE_SELECT: {
       const selected = { ...state.selected };
@@ -158,7 +195,6 @@ export default (state = initialState, action) => {
         encryptPasswords: false,
         selected: {},
         evaluations: {},
-        query: "",
         confirmOpen: false,
         run: initialRun
       };
@@ -189,7 +225,6 @@ export default (state = initialState, action) => {
         encryptPasswords: false,
         selected: {},
         evaluations: {},
-        query: "",
         confirmOpen: false,
         run: initialRun
       };
@@ -252,30 +287,14 @@ export default (state = initialState, action) => {
       };
     }
 
-    case actions.RUN_DEVICE_STATUS: {
-      const prev = state.run.deviceStatus[action.deviceId];
-      const wasFinal =
-        prev && (prev.state === "submitted" || prev.state === "error");
-      const isFinal =
-        action.state === "submitted" || action.state === "error";
-      return {
-        ...state,
-        run: {
-          ...state.run,
-          deviceStatus: {
-            ...state.run.deviceStatus,
-            [action.deviceId]: { state: action.state, message: action.message }
-          },
-          finished:
-            state.run.finished + (isFinal && !wasFinal ? 1 : 0),
-          failed:
-            state.run.failed +
-            (action.state === "error" && !wasFinal ? 1 : 0) -
-            (wasFinal && prev.state === "error" && action.state !== "error"
-              ? 1
-              : 0)
-        }
-      };
+    case actions.RUN_DEVICE_STATUS:
+      return { ...state, run: applyDeviceStatus(state.run, action) };
+
+    // the coalesced form (submitEngine buffers updates so one dispatch - and so
+    // one table render - covers a whole burst, e.g. an abort)
+    case actions.RUN_DEVICE_STATUS_BATCH: {
+      const run = action.updates.reduce(applyDeviceStatus, state.run);
+      return run === state.run ? state : { ...state, run };
     }
 
     case actions.RUN_ABORT_REQUESTED:

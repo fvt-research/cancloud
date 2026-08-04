@@ -9,9 +9,6 @@
 //     Per the agreed policy these are flagged, not fixed, and several live in
 //     the upstream config-editor-tools/base packages.
 
-// detect-browser returns null under jsdom - mock before config-editor-base
-jest.mock("detect-browser", () => ({ detect: () => ({ name: "chrome" }) }));
-
 import { editorActions } from "config-editor-base";
 import { encryptionFields } from "config-editor-tools";
 import { analyzePartial } from "../evaluate";

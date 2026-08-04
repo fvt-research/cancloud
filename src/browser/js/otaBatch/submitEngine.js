@@ -28,19 +28,59 @@ import {
 import { getEncryptActive } from "./selectors";
 import {
   SUBMIT_CONCURRENCY,
+  STATUS_FLUSH_MS,
   PUT_NAME_REGEX,
   FW_PUT_NAME_REGEX,
   TLS_PUT_NAME_REGEX,
   TLS_FILE_NAME,
   PRESIGN_EXPIRY
 } from "./constants";
-import { RUN_START, RUN_APPEND, RUN_DEVICE_STATUS, RUN_DONE } from "./actionTypes";
+import {
+  RUN_START,
+  RUN_APPEND,
+  RUN_DEVICE_STATUS_BATCH,
+  RUN_DONE
+} from "./actionTypes";
 
 let runToken = 0;
 let queue = null;
 
-const setDeviceStatus = (dispatch, deviceId, state, message) =>
-  dispatch({ type: RUN_DEVICE_STATUS, deviceId, state, message });
+// Coalesced status updates: every dispatch re-renders the device table, and an
+// abort rejects all queued devices in one microtask burst. Buffering by device
+// (last state wins) turns that burst into a single dispatch/render.
+let pendingStatus = null;
+let statusTimer = null;
+
+const flushStatus = (dispatch) => {
+  if (statusTimer) {
+    clearTimeout(statusTimer);
+    statusTimer = null;
+  }
+  if (!pendingStatus || !pendingStatus.size) {
+    pendingStatus = null;
+    return;
+  }
+  const updates = [];
+  pendingStatus.forEach((value, deviceId) =>
+    updates.push({ deviceId, state: value.state, message: value.message })
+  );
+  pendingStatus = null;
+  dispatch({ type: RUN_DEVICE_STATUS_BATCH, updates });
+};
+
+const dropPendingStatus = () => {
+  if (statusTimer) clearTimeout(statusTimer);
+  statusTimer = null;
+  pendingStatus = null;
+};
+
+const setDeviceStatus = (dispatch, deviceId, state, message) => {
+  if (!pendingStatus) pendingStatus = new Map();
+  pendingStatus.set(deviceId, { state, message });
+  if (!statusTimer) {
+    statusTimer = setTimeout(() => flushStatus(dispatch), STATUS_FLUSH_MS);
+  }
+};
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -470,6 +510,8 @@ const runTasks = (dispatch, getState, deviceIds, token) => {
   );
 
   return Promise.all(tasks).then(() => {
+    // the final states must land before RUN_DONE flips the footer to its summary
+    flushStatus(dispatch);
     if (token === runToken) {
       dispatch({ type: RUN_DONE });
     }
@@ -480,6 +522,7 @@ const runTasks = (dispatch, getState, deviceIds, token) => {
 export const startRun = (dispatch, getState, deviceIds) => {
   runToken += 1;
   const token = runToken;
+  dropPendingStatus(); // no leftovers from a previous run
   queue = createRequestQueue(SUBMIT_CONCURRENCY);
   dispatch({ type: RUN_START, deviceIds });
   return runTasks(dispatch, getState, deviceIds, token);
@@ -490,6 +533,7 @@ export const startRun = (dispatch, getState, deviceIds) => {
 export const retryRun = (dispatch, getState, deviceIds) => {
   runToken += 1;
   const token = runToken;
+  dropPendingStatus(); // no leftovers from a previous run
   queue = createRequestQueue(SUBMIT_CONCURRENCY);
   dispatch({ type: RUN_APPEND, deviceIds });
   return runTasks(dispatch, getState, deviceIds, token);
@@ -503,5 +547,6 @@ export const abortRun = () => {
 // late task results exit silently on the token check
 export const invalidateRun = () => {
   runToken += 1;
+  dropPendingStatus(); // the slice is being reset - never dispatch into it
   if (queue) queue.clear();
 };

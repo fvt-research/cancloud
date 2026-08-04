@@ -5,9 +5,6 @@
 // config object key, a fresh per-device ephemeral key on the encrypt path, and
 // correct abort / stale-run / retry behaviour.
 
-// detect-browser returns null under jsdom - mock before config-editor-base
-jest.mock("detect-browser", () => ({ detect: () => ({ name: "chrome" }) }));
-
 // mock only the S3 surface (web) - keep cache/evaluate/selectors real
 jest.mock("../../web", () => ({
   __esModule: true,
@@ -41,7 +38,7 @@ import { encryptionCrypto, encryptionFields } from "config-editor-tools";
 import * as cache from "../cache";
 import { mergeConfig } from "../evaluate";
 import { startRun, abortRun, invalidateRun } from "../submitEngine";
-import { RUN_DEVICE_STATUS, RUN_DONE } from "../actionTypes";
+import { RUN_DEVICE_STATUS_BATCH, RUN_DONE } from "../actionTypes";
 import { waitFor } from "../__fixtures__/otaTestKit";
 
 // self-contained CANedge2-like schema (root additionalProperties:false so the
@@ -153,8 +150,15 @@ const buildEnv = ({
   return { dispatch, getState, actions, text, crc, config };
 };
 
+// status updates arrive coalesced (RUN_DEVICE_STATUS_BATCH) - flatten them back
+// to one entry per update so the assertions read as before
+const statusUpdates = (actions) =>
+  actions
+    .filter((a) => a.type === RUN_DEVICE_STATUS_BATCH)
+    .reduce((all, a) => all.concat(a.updates), []);
+
 const statusOf = (actions, deviceId) => {
-  const rows = actions.filter((a) => a.type === RUN_DEVICE_STATUS && a.deviceId === deviceId);
+  const rows = statusUpdates(actions).filter((u) => u.deviceId === deviceId);
   return rows[rows.length - 1];
 };
 
@@ -359,14 +363,35 @@ describe("abort", () => {
     web.PresignedGet.mockReturnValue(new Promise(() => {})); // never resolves
 
     startRun(env.dispatch, env.getState, ids); // do not await - it never settles
-    await waitFor(() => env.actions.some((a) => a.type === RUN_DEVICE_STATUS && a.state === "submitting"));
+    await waitFor(() => statusUpdates(env.actions).some((u) => u.state === "submitting"));
 
     abortRun();
-    await waitFor(() => env.actions.some((a) => a.type === RUN_DEVICE_STATUS && a.state === "aborted"));
+    await waitFor(() => statusUpdates(env.actions).some((u) => u.state === "aborted"));
 
-    const aborted = env.actions.filter((a) => a.type === RUN_DEVICE_STATUS && a.state === "aborted");
-    expect(aborted.map((a) => a.deviceId)).toContain("AABBCC06");
+    const aborted = statusUpdates(env.actions).filter((u) => u.state === "aborted");
+    expect(aborted.map((u) => u.deviceId)).toContain("AABBCC06");
     expect(web.PutObject).not.toHaveBeenCalled();
+  });
+
+  it("reports every aborted device in ONE dispatch (no per-device render storm)", async () => {
+    // 40 queued devices: the whole rejection burst must coalesce into a single
+    // RUN_DEVICE_STATUS_BATCH, or the table re-renders 40 times in one task
+    const ids = Array.from({ length: 40 }, (unused, n) =>
+      "AABB" + n.toString(16).toUpperCase().padStart(4, "0")
+    );
+    const env = buildEnv({ ids, partial: { connect: { s3: { server: { endpoint: "http://x" } } } } });
+    web.PresignedGet.mockReturnValue(new Promise(() => {}));
+
+    startRun(env.dispatch, env.getState, ids);
+    await waitFor(() => statusUpdates(env.actions).some((u) => u.state === "submitting"));
+    const before = env.actions.filter((a) => a.type === RUN_DEVICE_STATUS_BATCH).length;
+
+    abortRun();
+    await waitFor(() => statusUpdates(env.actions).filter((u) => u.state === "aborted").length >= 35);
+
+    const dispatches = env.actions.filter((a) => a.type === RUN_DEVICE_STATUS_BATCH).length - before;
+    expect(dispatches).toBe(1);
+    expect(statusUpdates(env.actions).filter((u) => u.state === "aborted").length).toBe(35);
   });
 });
 
@@ -377,7 +402,7 @@ describe("run-token invalidation", () => {
     global.fetch.mockReturnValue(gate.promise);
 
     startRun(env.dispatch, env.getState, ["AABBCCDD"]); // do not await yet
-    await waitFor(() => env.actions.some((a) => a.type === RUN_DEVICE_STATUS && a.state === "submitting"));
+    await waitFor(() => statusUpdates(env.actions).some((u) => u.state === "submitting"));
 
     invalidateRun(); // bump the run token mid-flight
     gate.resolve({ ok: true, status: 200, text: () => Promise.resolve(env.text) });
@@ -386,7 +411,7 @@ describe("run-token invalidation", () => {
     // the PUT was validated on fresh data and is allowed to finish...
     expect(web.PutObject).toHaveBeenCalledTimes(1);
     // ...but the now-stale run must not report submitted or fire RUN_DONE
-    const submitted = env.actions.filter((a) => a.type === RUN_DEVICE_STATUS && a.state === "submitted");
+    const submitted = statusUpdates(env.actions).filter((u) => u.state === "submitted");
     expect(submitted).toEqual([]);
     expect(env.actions.some((a) => a.type === RUN_DONE)).toBe(false);
   });

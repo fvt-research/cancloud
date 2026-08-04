@@ -231,7 +231,8 @@ export class Login extends React.Component {
     if (
       this.state.endPoint.substring(0, 6) != "https:" &&
       browser &&
-      (browser.name == "chrome" || browser.name == "edge") &&
+      // "edge" is legacy EdgeHTML, "edge-chromium" is Edge 79+ (detect-browser 4.6+)
+      ["chrome", "edge", "edge-chromium"].includes(browser.name) &&
       isMinioServer == true
     ) {
       message = "It looks like you are trying to login to a TLS-disabled MinIO S3 server using a Chrome/Edge browser. This is not possible unless you are self-hosting CANcloud on the S3 server network. You can use Firefox instead - or enable TLS on your MinIO S3 server. See the S3 server documentation details.";

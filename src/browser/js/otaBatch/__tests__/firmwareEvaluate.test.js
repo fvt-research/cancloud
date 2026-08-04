@@ -3,9 +3,6 @@
 // firmware that adds non-official fields) is blocked/grayed before submit -
 // matching the editor tool, instead of only erroring at submit time.
 
-// detect-browser returns null under jsdom; evaluate.js imports config-editor-base
-jest.mock("detect-browser", () => ({ detect: () => ({ name: "chrome" }) }));
-
 import { evaluateDevice } from "../evaluate";
 import * as cache from "../cache";
 import {

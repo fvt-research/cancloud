@@ -35,8 +35,10 @@ import {
   SET_ARTIFACTS_REQUESTED,
   PATCH_ARTIFACTS,
   SET_EVALUATIONS,
+  SET_EVAL_PROGRESS,
   BUMP_EVAL_TOKEN,
   SET_QUERY,
+  SET_SORT,
   TOGGLE_SELECT,
   SET_SELECTION,
   SET_CONFIRM_OPEN,
@@ -53,6 +55,19 @@ import {
 export * from "./actionTypes";
 
 export const setQuery = (query) => ({ type: SET_QUERY, query });
+
+// clicking a column sorts it ascending; clicking the same column flips it
+export const toggleSort = (sortBy) => {
+  return function (dispatch, getState) {
+    const state = getState().otaBatch;
+    dispatch({
+      type: SET_SORT,
+      sortBy,
+      sortDesc: state.sortBy === sortBy ? !state.sortDesc : false
+    });
+  };
+};
+
 export const toggleSelect = (deviceId) => ({ type: TOGGLE_SELECT, deviceId });
 export const setSelection = (selected) => ({ type: SET_SELECTION, selected });
 export const setConfirmOpen = (open) => ({ type: SET_CONFIRM_OPEN, open });
@@ -170,7 +185,9 @@ const fetchArtifactsFor = (dispatch, getState, deviceIds) => {
 
   return Promise.all(jobs).then(() => {
     flush();
-    dispatch(evaluateAll());
+    // chain the evaluation wave: callers (retryFailed, the Refresh spinner)
+    // resolve only once the new evaluations are in the store
+    return dispatch(evaluateAll());
   });
 };
 
@@ -186,8 +203,7 @@ export const ensureArtifacts = (force) => {
       return Promise.resolve();
     }
     if (state.artifactsRequested && !force) {
-      dispatch(evaluateAll());
-      return Promise.resolve();
+      return dispatch(evaluateAll());
     }
     dispatch({ type: SET_ARTIFACTS_REQUESTED });
     return fetchArtifactsFor(dispatch, getState, state.devices);
@@ -205,19 +221,33 @@ export const refreshConfigs = (deviceIds) => {
 // ---------------------------------------------------------------------------
 // evaluation
 
+// evaluating one device costs ~10ms (deep merge + full ajv validation), so a
+// fleet-sized loop would freeze the tab for seconds. Work in time slices short
+// enough to stay under the browser's 50ms "long task" bar, yielding between
+// them so the progress line paints and the tab stays responsive.
+const EVAL_SLICE_MS = 40;
+const nextTick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
 export const evaluateAll = () => {
   return function (dispatch, getState) {
     dispatch({ type: BUMP_EVAL_TOKEN });
+    // one snapshot for the whole wave. Safe to read across the async slices
+    // ONLY because every path that mutates devices/artifacts/deviceFiles also
+    // dispatches a new evaluateAll, whose BUMP_EVAL_TOKEN makes this wave bail
+    // at its next slice - keep that invariant when adding mutators.
     const state = getState().otaBatch;
     const token = state.evalToken;
 
     const evaluations = {};
-    cache.clearMergedResults();
+    // built locally and swapped in atomically on completion, so the previous
+    // wave's merged results stay readable (downloadNewConfig) during the wave
+    const mergedResults = new Map();
 
     // a partial is optional; a broken partial suppresses evaluation entirely
     if (state.partial && state.partialBlockers.length) {
+      cache.clearMergedResults();
       dispatch({ type: SET_EVALUATIONS, evaluations, token });
-      return;
+      return Promise.resolve();
     }
 
     const analysis = state.partial
@@ -227,7 +257,7 @@ export const evaluateAll = () => {
     const tls = state.loadedTls ? cache.getTls() : null;
     const nowMs = Date.now();
 
-    state.devices.forEach((deviceId) => {
+    const evaluateOne = (deviceId) => {
       const artifact = state.artifacts[deviceId] || {};
       const input = {
         deviceId,
@@ -251,7 +281,7 @@ export const evaluateAll = () => {
       // bulky merge results (the post-merge base for download/submit) stay in
       // the module cache
       if (result.merged) {
-        cache.setMergedResult(deviceId, {
+        mergedResults.set(deviceId, {
           merged: result.merged,
           mergedText: result.mergedText
         });
@@ -269,9 +299,34 @@ export const evaluateAll = () => {
         fw: result.fw,
         tls: result.tls
       };
-    });
+    };
 
-    dispatch({ type: SET_EVALUATIONS, evaluations, token });
+    const devices = state.devices;
+    const step = (start) => {
+      // a newer wave superseded this one (e.g. another file was loaded) - drop
+      // out rather than finish work whose SET_EVALUATIONS would be ignored
+      if (getState().otaBatch.evalToken !== token) return Promise.resolve();
+
+      const sliceStart = Date.now();
+      let index = start;
+      while (index < devices.length && Date.now() - sliceStart < EVAL_SLICE_MS) {
+        evaluateOne(devices[index]);
+        index += 1;
+      }
+      if (index >= devices.length) {
+        cache.replaceMergedResults(mergedResults);
+        dispatch({ type: SET_EVALUATIONS, evaluations, token });
+        return Promise.resolve();
+      }
+      dispatch({
+        type: SET_EVAL_PROGRESS,
+        token,
+        progress: { done: index, total: devices.length }
+      });
+      return nextTick().then(() => step(index));
+    };
+
+    return step(0);
   };
 };
 
@@ -308,10 +363,24 @@ export const loadPartialFile = (fileName, rawText) => {
   };
 };
 
+// the editor route segment -> the canonical device folder id, or null. Matches
+// case-insensitively (and tolerates a trailing slash) so the seeded selection
+// key can never be a near-miss of the real folder name.
+const resolveDeviceFolder = (buckets, prefix) => {
+  const candidate = (prefix || "").replace(/\/+$/, "");
+  if (!DEVICE_FOLDER_REGEX.test(candidate)) return null;
+  return (
+    (buckets || []).find(
+      (bucket) => bucket.toUpperCase() === candidate.toUpperCase()
+    ) || null
+  );
+};
+
 // called from the editor's Review-changes modal ("Transfer to OTA batch manager")
 export const receivePartialFromEditor = ({ partial, deletions, configName }) => {
-  return function (dispatch) {
+  return function (dispatch, getState) {
     const { prefix } = pathSlice(history.location.pathname);
+    const sourceDeviceId = resolveDeviceFolder(getState().buckets.list, prefix);
     const analysis = analyzePartial(partial, deletions || []);
 
     // SET_PARTIAL clears loadedFirmware/loadedTls in redux; drop the cached Files too
@@ -323,13 +392,20 @@ export const receivePartialFromEditor = ({ partial, deletions, configName }) => 
       deletions: deletions || [],
       source: {
         kind: "editor",
-        deviceId: prefix || null,
+        deviceId: sourceDeviceId || prefix || null,
         configName: configName || null,
         revision: encryptionFields.getConfigRevision(configName || "")
       },
       blockers: analysis.blockers,
       notes: analysis.notes
     });
+
+    // the config came from one known device - pre-select it so a single-device
+    // rollout needs no extra click. SET_EVALUATIONS prunes it again if that
+    // device turns out blocked or unchanged.
+    if (sourceDeviceId) {
+      dispatch({ type: SET_SELECTION, selected: { [sourceDeviceId]: true } });
+    }
 
     history.push("/ota-batch-manager/");
     // artifacts load once the view bootstraps (bootstrapDeviceData calls

@@ -1,13 +1,17 @@
 import { createSelector } from "reselect";
 import { canedgeTypeName } from "../utils";
+import { sortRows } from "./rowSort";
 
 const devicesSelector = (state) => state.otaBatch.devices;
 const deviceFilesSelector = (state) => state.otaBatch.deviceFiles;
 const heartbeatsSelector = (state) => state.otaBatch.heartbeats;
 const artifactsSelector = (state) => state.otaBatch.artifacts;
+const artifactsRequestedSelector = (state) => state.otaBatch.artifactsRequested;
 const evaluationsSelector = (state) => state.otaBatch.evaluations;
 const selectedSelector = (state) => state.otaBatch.selected;
 const querySelector = (state) => state.otaBatch.query;
+const sortBySelector = (state) => state.otaBatch.sortBy;
+const sortDescSelector = (state) => state.otaBatch.sortDesc;
 const runStatusSelector = (state) => state.otaBatch.run.deviceStatus;
 const encryptPasswordsSelector = (state) => state.otaBatch.encryptPasswords;
 
@@ -112,6 +116,70 @@ const deriveDisplay = (evaluation, encryptActive) => {
   };
 };
 
+// searchable words per status so the search box can narrow on what the Status
+// column shows (run states are already single words)
+const STATUS_WORDS = {
+  pending: "evaluating pending",
+  blocked: "incompatible blocked",
+  nochange: "no change nochange",
+  ready: "ready"
+};
+const statusWords = (display, runState) =>
+  (runState && runState.state) || STATUS_WORDS[display.status] || "";
+
+const buildRow = (
+  deviceId,
+  deviceJson,
+  artifact,
+  evaluation,
+  runState,
+  heartbeatMs,
+  encryptActive
+) => {
+  const configMeta = artifact.config || {};
+  const crc32 = deviceJson && deviceJson.cfg_crc32;
+  // identical predicate to the status dashboard (prepareDataDevices.js)
+  const synced =
+    crc32 && configMeta.crc32
+      ? parseInt(configMeta.crc32, 16) === parseInt(crc32, 16)
+      : false;
+  // resolved once the folder config crc is known - until then (e.g. during
+  // a refresh) the sync state is unknown, so the column shows nothing
+  // rather than defaulting to a red cross
+  const resolved = !!(configMeta && configMeta.crc32);
+
+  const type = canedgeTypeName(deviceJson && deviceJson.type);
+  const meta = (deviceJson && deviceJson.log_meta) || "";
+  const fwVer = (deviceJson && deviceJson.fw_ver) || "";
+  const display = deriveDisplay(evaluation, encryptActive);
+
+  return {
+    id: deviceId,
+    type,
+    meta,
+    fwVer,
+    heartbeatMs,
+    configSync: { synced, resolved, crc32: crc32 || "" },
+    evaluation,
+    eligible: !!(evaluation && evaluation.eligible),
+    currentEncStatus: evaluation ? evaluation.currentEncStatus : null,
+    display,
+    runState,
+    searchLabel: [deviceId, meta, type, fwVer, statusWords(display, runState)]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+  };
+};
+
+// Per-device row memo. A run-status or artifact change for ONE device must not
+// hand every OTHER row a new object: the rows are PureComponents, so that would
+// re-render the whole table on every update (O(n^2) over a fleet-sized run -
+// measured at ~0.7s per status change with 200 devices). Entries are keyed by
+// the identity of each input, and devices that disappear drop out on rebuild.
+const EMPTY_ARTIFACT = {};
+let rowMemo = new Map();
+
 // one row per device folder; blocked/incomplete devices included (greyed)
 export const getRows = createSelector(
   devicesSelector,
@@ -129,43 +197,72 @@ export const getRows = createSelector(
     evaluations,
     runStatus,
     encryptActive
-  ) =>
-    devices.map((deviceId) => {
-      const deviceJson = deviceFiles[deviceId];
-      const artifact = artifacts[deviceId] || {};
-      const configMeta = artifact.config || {};
+  ) => {
+    const memo = new Map();
+    const rows = devices.map((deviceId) => {
+      const deviceJson = deviceFiles[deviceId] || null;
+      const artifact = artifacts[deviceId] || EMPTY_ARTIFACT;
       const evaluation = evaluations[deviceId] || null;
+      const runState = runStatus[deviceId] || null;
+      const heartbeatMs = heartbeats[deviceId] || null;
 
-      const crc32 = deviceJson && deviceJson.cfg_crc32;
-      // identical predicate to the status dashboard (prepareDataDevices.js)
-      const synced =
-        crc32 && configMeta.crc32
-          ? parseInt(configMeta.crc32, 16) === parseInt(crc32, 16)
-          : false;
-      // resolved once the folder config crc is known - until then (e.g. during
-      // a refresh) the sync state is unknown, so the column shows nothing
-      // rather than defaulting to a red cross
-      const resolved = !!(configMeta && configMeta.crc32);
+      const cached = rowMemo.get(deviceId);
+      if (
+        cached &&
+        cached.deviceJson === deviceJson &&
+        cached.artifact === artifact &&
+        cached.evaluation === evaluation &&
+        cached.runState === runState &&
+        cached.heartbeatMs === heartbeatMs &&
+        cached.encryptActive === encryptActive
+      ) {
+        memo.set(deviceId, cached);
+        return cached.row;
+      }
 
-      return {
-        id: deviceId,
-        type: canedgeTypeName(deviceJson && deviceJson.type),
-        meta: (deviceJson && deviceJson.log_meta) || "",
-        fwVer: (deviceJson && deviceJson.fw_ver) || "",
-        heartbeatMs: heartbeats[deviceId] || null,
-        configSync: { synced, resolved, crc32: crc32 || "" },
+      const row = buildRow(
+        deviceId,
+        deviceJson,
+        artifact,
         evaluation,
-        eligible: !!(evaluation && evaluation.eligible),
-        currentEncStatus: evaluation ? evaluation.currentEncStatus : null,
-        display: deriveDisplay(evaluation, encryptActive),
-        runState: runStatus[deviceId] || null,
-        searchLabel: (
-          deviceId +
-          " " +
-          ((deviceJson && deviceJson.log_meta) || "")
-        ).toLowerCase()
-      };
-    })
+        runState,
+        heartbeatMs,
+        encryptActive
+      );
+      memo.set(deviceId, {
+        deviceJson,
+        artifact,
+        evaluation,
+        runState,
+        heartbeatMs,
+        encryptActive,
+        row
+      });
+      return row;
+    });
+    rowMemo = memo;
+    return rows;
+  }
+);
+
+// config/schema fetch progress, so the table can say what it is waiting for
+// instead of showing a fleet of silent "Evaluating ..." rows
+export const getLoadProgress = createSelector(
+  devicesSelector,
+  artifactsSelector,
+  artifactsRequestedSelector,
+  (devices, artifacts, requested) => {
+    if (!requested || !devices.length) return null;
+    let done = 0;
+    let loading = 0;
+    devices.forEach((deviceId) => {
+      const artifact = artifacts[deviceId];
+      const status = artifact && artifact.config && artifact.config.status;
+      if (status === "loading") loading += 1;
+      else if (status) done += 1;
+    });
+    return loading ? { done, total: done + loading } : null;
+  }
 );
 
 export const getFilteredRows = createSelector(
@@ -181,6 +278,15 @@ export const getFilteredRows = createSelector(
       terms.every((term) => row.searchLabel.indexOf(term) > -1)
     );
   }
+);
+
+// the rendered order. Must be a selector: the component slices RENDER_CAP off
+// this result, so sorting after that would order only the first 1000 matches
+export const getSortedRows = createSelector(
+  getFilteredRows,
+  sortBySelector,
+  sortDescSelector,
+  sortRows
 );
 
 export const getFilteredEligibleRows = createSelector(getFilteredRows, (rows) =>
@@ -207,9 +313,17 @@ export const getMasterChecked = createSelector(
     eligibleRows.length > 0 && eligibleRows.every((row) => selected[row.id])
 );
 
-// aggregated warnings across devices that will actually change, given the
-// current toggle: unique message with device count
-export const getAggregatedWarnings = createSelector(getRows, (rows) => {
+// rows the user has picked (order/filter independent - the submit set is the
+// selection, not what the table happens to show)
+export const getSelectedRows = createSelector(
+  getRows,
+  selectedSelector,
+  (rows, selected) => rows.filter((row) => selected[row.id])
+);
+
+// aggregated warnings across the SELECTED devices that will actually change,
+// given the current toggle: unique message with device count
+export const getAggregatedWarnings = createSelector(getSelectedRows, (rows) => {
   const counts = {};
   const order = [];
   rows.forEach((row) => {

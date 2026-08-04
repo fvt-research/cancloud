@@ -17,10 +17,23 @@ At [CSS Electronics](https://www.csselectronics.com), we always host the [latest
 4. Download, share & delete objects - or upload files (e.g. firmware.bin or certs_server.p7b for over-the-air updates)
 5. Configure CANedge devices via an online editor - and submit for easy over-the-air updates
 6. Encrypt configuration passwords using the built-in encryption tool
-7. Add device meta data (incl. pictures and searchable meta name)
-8. Easily customize the portal with your own logo and CSS styling (see `src/browser/index.html`)
+7. Batch-update your fleet over-the-air via the OTA batch manager (configuration, firmware or TLS certificates) with a sortable & searchable device table
+8. Add device meta data (incl. pictures and searchable meta name)
+9. Easily customize the portal with your own logo and CSS styling (see `src/browser/index.html`)
 
 ```
+---
+
+### OTA batch manager
+
+The OTA batch manager rolls a single change out across many CANedge devices in one pass. It offers three mutually exclusive modes:
+
+- **Configuration**: Load a partial configuration file (or transfer one from the configuration editor) and apply only those fields on top of each device's current configuration - optionally encrypting all plain-text passwords
+- **Firmware**: Load a `firmware.bin` and push it to every compatible device, migrating the configuration to the new firmware revision where required
+- **TLS**: Deploy a `certs_server.p7b` to each device's root folder
+
+Every device is validated individually before anything is written - incompatible devices are greyed out with an explanation, and the resulting configuration can be downloaded per device for review. The device table can be searched by device ID, meta name, device type, firmware version and status - and every column can be sorted. This makes it easy to isolate a cohort (e.g. all devices on firmware `01.07.07`), select it via the master checkbox and submit the updates in one batch.
+
 ---
 
 ### Documentation
@@ -80,6 +93,19 @@ CANcloud ships a Jest + Enzyme unit-test suite living alongside the source under
 Notes:
 - Tests run serially (`--runInBand`). On the pinned toolchain (jest 23 / node 16.16.0) parallel workers can contend and produce empty output.
 - The suite is fully client-side: the S3 layer (`web`) is mocked, so no live server or credentials are needed to run the tests.
+
+#### Scale testing (synthetic fleet)
+
+A real test bucket usually holds a handful of devices, which hides anything that only appears across hundreds of rows (OTA batch manager, status dashboard). `scripts/seed-perf-fleet.js` seeds a synthetic fleet of CANedge device folders into a bucket of your choice - the `device.json` files are synthesised and every configuration is generated from the schemas bundled with `config-editor-base`, so no fixture files are needed:
+
+```
+node scripts/seed-perf-fleet.js validate                       # generate + schema-check the cohorts (no writes)
+node scripts/seed-perf-fleet.js seed     --creds <creds.json>  # write 200 device folders (5EED0000...)
+node scripts/seed-perf-fleet.js verify   --creds <creds.json>  # count what landed
+node scripts/seed-perf-fleet.js teardown --creds <creds.json> --yes
+```
+
+`--creds` takes a CANedge configuration file (it reads `connect.s3.server`) or a flat `{ endpoint, bucket, region, accessKey, secretKey }`; the same values can be supplied via `S3_ENDPOINT` / `S3_BUCKET` / `S3_REGION` / `S3_ACCESS_KEY` / `S3_SECRET_KEY`. **Keep credential files outside the repository.** Use `--devices <n>` for a different fleet size and `--prefix <hex>` to change the synthetic device-id block (teardown only ever deletes objects under that prefix). The seeded fleet spans several device types, firmware and configuration revisions plus a few deliberately incompatible devices; note the placeholder public key means an *encryption* run against them fails at key import - they are for configuration / firmware / TLS testing.
 
 ---
 ### Versioning

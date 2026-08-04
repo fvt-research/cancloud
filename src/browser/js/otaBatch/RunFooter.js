@@ -57,7 +57,25 @@ export class RunFooter extends React.Component {
 
         {run.active ? (
           <span className="ota-run-status">
-            Submitting: {run.finished} / {run.total} done
+            <i className="fa fa-circle-o-notch fa-spin" />{" "}
+            {run.aborted
+              ? "Aborting - finishing the devices already in flight ..."
+              : "Submitting: " + run.finished + " / " + run.total + " done"}
+            {run.failed > 0 ? (
+              <span className="ota-status-error"> - {run.failed} failed</span>
+            ) : null}
+          </span>
+        ) : null}
+
+        {/* a finished run must not vanish without a word: keep the outcome on
+            screen so "did it work?" is answerable without reading every row */}
+        {!run.active && run.total > 0 ? (
+          <span className="ota-run-status">
+            {run.aborted ? "Aborted" : "Finished"}: {run.finished - run.failed} of{" "}
+            {run.total} submitted
+            {run.failed > 0 ? (
+              <span className="ota-status-error"> - {run.failed} failed</span>
+            ) : null}
           </span>
         ) : null}
 
