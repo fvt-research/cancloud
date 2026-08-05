@@ -2,6 +2,7 @@ import web from "../web";
 import history from "../history";
 import { pathSlice } from "../utils";
 import { statusRequestQueue } from "../requestQueue";
+import { nextSort } from "../tableSort";
 import * as dashboardStatusActions from "../dashboardStatus/actions";
 import * as alertActions from "../alert/actions";
 import {
@@ -56,14 +57,12 @@ export * from "./actionTypes";
 
 export const setQuery = (query) => ({ type: SET_QUERY, query });
 
-// clicking a column sorts it ascending; clicking the same column flips it
 export const toggleSort = (sortBy) => {
   return function (dispatch, getState) {
     const state = getState().otaBatch;
     dispatch({
       type: SET_SORT,
-      sortBy,
-      sortDesc: state.sortBy === sortBy ? !state.sortDesc : false
+      ...nextSort(state.sortBy, state.sortDesc, sortBy)
     });
   };
 };

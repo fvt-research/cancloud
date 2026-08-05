@@ -18,8 +18,9 @@ At [CSS Electronics](https://www.csselectronics.com), we always host the [latest
 5. Configure CANedge devices via an online editor - and submit for easy over-the-air updates
 6. Encrypt configuration passwords using the built-in encryption tool
 7. Batch-update your fleet over-the-air via the OTA batch manager (configuration, firmware or TLS certificates) with a sortable & searchable device table
-8. Add device meta data (incl. pictures and searchable meta name)
-9. Easily customize the portal with your own logo and CSS styling (see `src/browser/index.html`)
+8. Monitor your fleet via the status dashboard, incl. a sortable device table
+9. Add device meta data (incl. pictures and searchable meta name)
+10. Easily customize the portal with your own logo and CSS styling (see `src/browser/index.html`)
 
 ```
 ---
@@ -33,6 +34,12 @@ The OTA batch manager rolls a single change out across many CANedge devices in o
 - **TLS**: Deploy a `certs_server.p7b` to each device's root folder
 
 Every device is validated individually before anything is written - incompatible devices are greyed out with an explanation, and the resulting configuration can be downloaded per device for review. The device table can be searched by device ID, meta name, device type, firmware version and status - and every column can be sorted. This makes it easy to isolate a cohort (e.g. all devices on firmware `01.07.07`), select it via the master checkbox and submit the updates in one batch.
+
+---
+
+### Status dashboard
+
+The status dashboard summarises your fleet in charts and KPIs - and lists every device in a table covering device ID, type, meta name, password encryption state, last heartbeat, firmware version, SD storage used, configuration sync state and uploaded log data. Every column can be sorted by clicking its header (clicking again reverses the order), which makes it easy to spot e.g. the devices that have not checked in recently, the ones running an outdated firmware or the ones still holding plain-text passwords. Devices with no data for the sorted column stay at the bottom in both directions.
 
 ---
 

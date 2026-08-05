@@ -12,6 +12,7 @@ import {
 } from "./selectors";
 import { RENDER_CAP } from "./constants";
 import { renderEncryptionLock } from "../encryptionLock";
+import SortableTh from "../SortableTh";
 
 // key = the rowSort.js sort key (null -> not sortable); no width -> flexes.
 // Every width is >= the header's own single-line need INCLUDING the sort caret
@@ -295,34 +296,6 @@ export class OtaDeviceTable extends React.Component {
     setSelection(next);
   };
 
-  renderHeader(column) {
-    const { sortBy, sortDesc, toggleSort } = this.props;
-    const style = column.width ? { width: column.width } : undefined;
-
-    if (!column.key) {
-      return (
-        <th key={column.label} style={style}>
-          {column.label}
-        </th>
-      );
-    }
-
-    const active = sortBy === column.key;
-    const icon = active ? (sortDesc ? "fa-caret-down" : "fa-caret-up") : "fa-sort";
-    return (
-      <th
-        key={column.key}
-        style={style}
-        className={"ota-sortable" + (active ? " ota-sorted" : "")}
-        title={(column.title ? column.title + " - " : "") + "Sort by " + column.label}
-        onClick={() => toggleSort(column.key)}
-      >
-        {column.label}
-        <i className={"fa ota-sort-icon " + icon} />
-      </th>
-    );
-  }
-
   render() {
     const {
       visibleRows,
@@ -330,11 +303,14 @@ export class OtaDeviceTable extends React.Component {
       counts,
       masterChecked,
       query,
+      sortBy,
+      sortDesc,
       selected,
       runActive,
       loadProgress,
       evalProgress,
       setQuery,
+      toggleSort,
       toggleSelect,
       downloadNewConfig
     } = this.props;
@@ -416,7 +392,15 @@ export class OtaDeviceTable extends React.Component {
                     onChange={this.onMasterToggle}
                   />
                 </th>
-                {COLUMNS.map((column) => this.renderHeader(column))}
+                {COLUMNS.map((column) => (
+                  <SortableTh
+                    key={column.key || column.label}
+                    column={column}
+                    sortBy={sortBy}
+                    sortDesc={sortDesc}
+                    onSort={toggleSort}
+                  />
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -436,7 +420,7 @@ export class OtaDeviceTable extends React.Component {
           </table>
           {capped ? (
             <p className="field-description">
-              Showing the first {RENDER_CAP} of {filteredRows.length} matches -
+              Showing the first {RENDER_CAP} of {visibleRows.length} matches -
               refine the search to narrow the list (selection still applies to
               all matches via the master checkbox)
             </p>
