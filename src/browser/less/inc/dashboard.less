@@ -72,6 +72,13 @@ div[class="check-box-container multi-select"] > div > button[class*="css-"]{
   height: 60px;
 }
 
+// the .fe-body bottom gutter only clears the file explorer's floating action
+// buttons, which the dashboard has none of - it just pushed the fixed-height
+// widget layout past 100vh and added a scrollbar
+.fe-body-dashboard {
+  padding-bottom: 0;
+}
+
 .dashboard {
   @media (max-width: @screen-sm-min) { //@screen-sm-min
     padding-top: 80px;

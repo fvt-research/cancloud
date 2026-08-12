@@ -6,7 +6,7 @@ import web from "../web";
 import DashboardStatusSection from "./DashboardStatusSection";
 
 const DashboardStatusMainContent = () => (
-  <div className="fe-body">
+  <div className="fe-body fe-body-dashboard">
     {web.LoggedIn() && <MobileHeader />}
     <Header />
     <DashboardStatusSection />

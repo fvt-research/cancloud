@@ -114,6 +114,10 @@ node scripts/seed-perf-fleet.js teardown --creds <creds.json> --yes
 
 `--creds` takes a CANedge configuration file (it reads `connect.s3.server`) or a flat `{ endpoint, bucket, region, accessKey, secretKey }`; the same values can be supplied via `S3_ENDPOINT` / `S3_BUCKET` / `S3_REGION` / `S3_ACCESS_KEY` / `S3_SECRET_KEY`. **Keep credential files outside the repository.** Use `--devices <n>` for a different fleet size and `--prefix <hex>` to change the synthetic device-id block (teardown only ever deletes objects under that prefix). The seeded fleet spans several device types, firmware and configuration revisions plus a few deliberately incompatible devices; note the placeholder public key means an *encryption* run against them fails at key import - they are for configuration / firmware / TLS testing.
 
+Add `--profile real` for a realistic small fleet instead (default 30 devices): Random device ids, `TRUCK 01A`-style metas, a genuine public key (encryption runs work), plain-text dummy credentials in every config (WiFi password, S3 secret key, SIM PIN - so the Sec column shows "plain"), all folders complete and consistent. The ids come from a fixed-seed PRNG (`--seed <n>`), so `verify`/`teardown` regenerate the same id list; teardown additionally checks each folder's `device.json` meta marker before deleting. When switching profiles or fleet sizes, always `teardown` the old fleet first - `seed` overwrites its own objects but never deletes strays.
+
+`scripts/seed-log-files.js` adds synthetic log uploads on top of the TRUCK fleet so the status dashboard shows realistic data activity: `upload` writes one NEW session folder per device (1-3 splits of ~300 KB, ~18 MB per run) in the CANedge `<serial>/<session>/<split>-<epoch>.MF4` structure, with the S3 meta `timestamp` CANcloud renders as Start Time. The dashboard bins uploads by S3 Last-Modified, so re-run `upload` a few times over some hours to build history - sessions auto-increment (`--session <n>` to pin one). `verify` totals per device; `teardown --yes` removes only the session folders.
+
 ---
 ### Versioning
 The CANcloud versioning is inspired by the semantic versioning system.

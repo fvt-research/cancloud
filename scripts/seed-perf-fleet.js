@@ -30,15 +30,26 @@
  *     Keep credential files OUTSIDE this repository (or in the ignored TEMP/).
  *
  *   options
- *     --devices <n>      how many devices to seed (default 200)
- *     --prefix <hex>     leading hex of the synthetic ids (default 5EED, so
- *                        5EED0000...) - teardown only ever touches this prefix
+ *     --profile <name>   perf (default) or real:
+ *                        perf - 200 devices, 5EED-prefixed ids, placeholder
+ *                               kpub, bare generated configs, BAD cohorts
+ *                        real - 30 devices that look like a real fleet:
+ *                               random ids, "TRUCK 01A" metas, a REAL public
+ *                               key (encryption runs work), plain-text dummy
+ *                               credentials in every config, no BAD cohorts
+ *     --devices <n>      how many devices to seed (default 200 / 30)
+ *     --prefix <hex>     perf only: leading hex of the ids (default 5EED) -
+ *                        teardown only ever touches this prefix
+ *     --seed <n>         real only: PRNG seed for the random ids (fixed
+ *                        default) - keep it stable so verify/teardown can
+ *                        regenerate the exact same id list
  *     --concurrency <n>  parallel PUTs (default 8)
  *     --yes              required by teardown
  *
- * NOTE the synthetic device.json carries a placeholder public key, so an
- * ENCRYPTION run against these devices fails at key import. They are meant for
- * config / firmware / TLS scale testing.
+ * NOTE the perf profile's device.json carries a placeholder public key, so an
+ * ENCRYPTION run against those devices fails at key import - use the real
+ * profile when testing encryption. Real-profile teardown double-checks each
+ * folder's device.json meta ("TRUCK ...") before deleting anything.
  */
 
 const fs = require("fs");
@@ -70,8 +81,10 @@ const flag = (name, fallback) => {
 };
 const has = (name) => argv.indexOf("--" + name) > -1;
 
-const TOTAL = Number(flag("devices", 200));
+const PROFILE = String(flag("profile", "perf"));
+const TOTAL = Number(flag("devices", PROFILE === "real" ? 30 : 200));
 const ID_PREFIX = String(flag("prefix", "5EED")).toUpperCase();
+const SEED = Number(flag("seed", 424242));
 const CONCURRENCY = Number(flag("concurrency", 8));
 
 const usage = (message) => {
@@ -88,9 +101,13 @@ const usage = (message) => {
   process.exit(1);
 };
 
+if (!["perf", "real"].includes(PROFILE)) usage("unknown profile: " + PROFILE);
+
 // --------------------------------------------------------------------------
 // cohorts: family x revision mix, plus a few deliberately-blocked rows so the
-// fleet is not uniformly "ready". Weights are shares of --devices.
+// fleet is not uniformly "ready". Weights are shares of --devices. The real
+// profile drops the BAD-* cohorts - a real fleet has consistent device.json
+// files and a schema object in every folder.
 
 const COHORTS = [
   { name: "CE2-0109", share: 0.4, family: "CANedge2", type: "0000001F", revision: "01.09", fwVer: "01.09.03" },
@@ -145,6 +162,99 @@ const buildConfig = (family, revision) => {
   return { schema, config: base };
 };
 
+// --------------------------------------------------------------------------
+// real profile: a REAL public key + plain-text dummy credentials (keyformat 0)
+// in every config - the fields analyzeConfigEncryption inspects, so the Sec
+// column shows "plain" and an encryption run has actual work to do. The values
+// are dummies; the seeding credentials are NEVER written into a config.
+
+const REAL_KPUB =
+  "Gnqt1HYCkUg+OoPOb4RlAszl0gHCgE4FWQzWdYZQBVrbStX5+sNkITpTc5RoKkTlh/ZTVQwdG3YncTWiv1Q1bQ==";
+
+const DUMMY_S3_SERVER = {
+  endpoint: "https://s3.us-east-1.amazonaws.com",
+  port: 443,
+  bucket: "fleet-data",
+  region: "us-east-1",
+  request_style: 0,
+  accesskey: "FLEET0EXAMPLE0KEY",
+  keyformat: 0,
+  secretkey: "Fleet0Example0Secret0Key0000000000000000",
+  signed_payload: 0
+};
+
+const addRealCredentials = (config, schema) => {
+  const conn = config.connect;
+  if (!conn) return;
+  const connSchema = schema.properties.connect;
+
+  if (conn.wifi) {
+    // item defaults from the schema (covers required fields like minrssi)
+    const itemSchema = connSchema.properties.wifi.properties.accesspoint.items;
+    const item = getDefaultFormState(validatorAjv6, itemSchema, undefined, itemSchema);
+    conn.wifi.keyformat = 0;
+    conn.wifi.accesspoint = [{ ...item, ssid: "FleetWiFi", pwd: "TruckFleet2026" }];
+  }
+  if (conn.cellular) {
+    conn.cellular.keyformat = 0;
+    conn.cellular.pin = "1234";
+    conn.cellular.apn = "internet";
+  }
+
+  // 01.08+ keeps s3 under the protocol dependency; 01.07 has it statically
+  const dep = connSchema.dependencies && connSchema.dependencies.protocol;
+  const branch = dep
+    ? dep.oneOf.find((b) => b.properties.protocol.enum[0] === 0)
+    : null;
+  const s3Schema = branch ? branch.properties.s3 : connSchema.properties.s3;
+  if (!s3Schema) return;
+  const s3Block = getDefaultFormState(validatorAjv6, s3Schema, conn.s3, s3Schema);
+  s3Block.server = { ...(s3Block.server || {}), ...DUMMY_S3_SERVER };
+  conn.s3 = s3Block;
+};
+
+// deep schema-order sort: the config editor's rjsf form rebuilds every object
+// in schema property order (incl. dependency-branch properties, appended after
+// the static ones), so seeded configs must use that exact key order - or a
+// one-field partial update diffs as a big reorder in the editor's review modal
+const sortBySchema = (value, schema) => {
+  if (!schema || typeof value !== "object" || value === null) return value;
+  if (Array.isArray(value)) {
+    return value.map((item) => sortBySchema(item, schema.items));
+  }
+  const order = [];
+  const subSchemas = {};
+  const collect = (s) => {
+    if (!s) return;
+    Object.keys(s.properties || {}).forEach((key) => {
+      if (!(key in subSchemas)) {
+        order.push(key);
+        subSchemas[key] = s.properties[key];
+      }
+    });
+    Object.keys(s.dependencies || {}).forEach((dep) =>
+      (s.dependencies[dep].oneOf || []).forEach(collect)
+    );
+  };
+  collect(schema);
+  const sorted = {};
+  order.forEach((key) => {
+    if (key in value) sorted[key] = sortBySchema(value[key], subSchemas[key]);
+  });
+  Object.keys(value).forEach((key) => {
+    if (!(key in sorted)) sorted[key] = value[key];
+  });
+  return sorted;
+};
+
+// what validate + seed actually use: the generated config, realised for the
+// active profile and normalised to the editor's key order
+const buildCohortArtifacts = (cohort) => {
+  const { schema, config } = buildConfig(cohort.family, cohort.revision);
+  if (PROFILE === "real") addRealCredentials(config, schema);
+  return { schema, config: sortBySchema(config, schema) };
+};
+
 const crc32Hex = (text) => crc32(text).toString(16).toUpperCase().padStart(8, "0");
 
 const deviceIdFor = (index) => {
@@ -152,17 +262,45 @@ const deviceIdFor = (index) => {
   return ID_PREFIX + index.toString(16).toUpperCase().padStart(width, "0");
 };
 
+// deterministic PRNG (mulberry32): the real profile's random-looking ids must
+// be reproducible from --seed so verify/teardown regenerate the exact id list
+const mulberry32 = (a) => () => {
+  a = (a + 0x6d2b79f5) | 0;
+  let t = Math.imul(a ^ (a >>> 15), 1 | a);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
+const buildIds = (count) => {
+  if (PROFILE !== "real") {
+    return Array.from({ length: count }, (unused, index) => deviceIdFor(index));
+  }
+  const rand = mulberry32(SEED);
+  const ids = new Set();
+  while (ids.size < count) {
+    let id = "";
+    for (let i = 0; i < 8; i += 1) id += "0123456789ABCDEF"[Math.floor(rand() * 16)];
+    ids.add(id);
+  }
+  return [...ids].sort();
+};
+
+const activeCohorts = () =>
+  PROFILE === "real" ? COHORTS.filter((c) => c.name.indexOf("BAD-") !== 0) : COHORTS;
+
 // id-ordered plan: one entry per device
 const buildPlan = () => {
+  const cohorts = activeCohorts();
+  const ids = buildIds(TOTAL);
   const plan = [];
   let index = 0;
-  COHORTS.forEach((cohort, position) => {
-    const isLast = position === COHORTS.length - 1;
+  cohorts.forEach((cohort, position) => {
+    const isLast = position === cohorts.length - 1;
     const count = isLast
       ? Math.max(TOTAL - index, 0)
       : Math.max(Math.round(TOTAL * cohort.share), 1);
     for (let n = 0; n < count && index < TOTAL; n += 1) {
-      plan.push({ cohort, id: deviceIdFor(index), n: index });
+      plan.push({ cohort, id: ids[index], n: index });
       index += 1;
     }
   });
@@ -179,16 +317,20 @@ const deviceJsonFor = (entry, configText) => {
     {
       id,
       type: cohort.type,
-      // placeholder of the right length: device.json validation checks the
-      // length, real key import only happens in an encryption run
-      kpub: "S".repeat(86) + "==",
+      // real profile: a genuine public key so encryption runs import it fine;
+      // perf profile: a placeholder of the right length (device.json validation
+      // checks the length, key import only happens in an encryption run)
+      kpub: PROFILE === "real" ? REAL_KPUB : "S".repeat(86) + "==",
       fw_ver: cohort.fwVer,
       hw_ver: "00.03/00.00",
       cfg_ver: cohort.breakTriple ? "01.08" : cohort.revision,
       cfg_name: "config-" + cohort.revision + ".json",
       cfg_crc32: crcOk ? crc32Hex(configText) : "DEADBEEF",
       sch_name: "schema-" + cohort.revision + ".json",
-      log_meta: "PERF " + n + " " + cohort.name,
+      log_meta:
+        PROFILE === "real"
+          ? "TRUCK " + String(n + 1).padStart(2, "0") + "ABCDEF"[n % 6]
+          : "PERF " + n + " " + cohort.name,
       space_used_mb: "0/7572",
       sd_info: "0003534453413038478084EA2FBA018B",
       sd_used_lifespan: "1",
@@ -301,10 +443,13 @@ const pool = async (items, limit, worker) => {
 // modes
 
 const modeValidate = () => {
-  console.log("cohort configs (generated, validated against their own schema):");
+  console.log(
+    "cohort configs (generated for profile '" + PROFILE +
+      "', validated against their own schema):"
+  );
   let bad = 0;
-  COHORTS.forEach((cohort) => {
-    const { schema, config } = buildConfig(cohort.family, cohort.revision);
+  activeCohorts().forEach((cohort) => {
+    const { schema, config } = buildCohortArtifacts(cohort);
     const validate = new Ajv({ allErrors: true, strict: false, logger: false }).compile(schema);
     const ok = validate(config);
     if (!ok) bad += 1;
@@ -352,8 +497,8 @@ const modeSeed = async () => {
   const { s3, bucket } = makeClient();
   const plan = buildPlan();
   const built = new Map();
-  COHORTS.forEach((cohort) => {
-    const { schema, config } = buildConfig(cohort.family, cohort.revision);
+  activeCohorts().forEach((cohort) => {
+    const { schema, config } = buildCohortArtifacts(cohort);
     built.set(cohort.name, {
       configText: JSON.stringify(config, null, 2),
       schemaText: JSON.stringify(schema, null, 2)
@@ -385,12 +530,28 @@ const modeSeed = async () => {
   console.log("done - open #/ota-batch-manager to see the fleet");
 };
 
+// all object keys belonging to the plan's folders (the real profile has no
+// shared id prefix, so it lists per device folder)
+const listPlanKeys = async (s3, bucket, plan) => {
+  if (PROFILE !== "real") {
+    return (await listAll(s3, bucket, ID_PREFIX, undefined)).keys;
+  }
+  const keys = [];
+  for (const entry of plan) {
+    keys.push(...(await listAll(s3, bucket, entry.id + "/", undefined)).keys);
+  }
+  return keys;
+};
+
 const modeVerify = async () => {
   const { s3, bucket } = makeClient();
   const plan = buildPlan();
-  const { keys } = await listAll(s3, bucket, ID_PREFIX, undefined);
+  const keys = await listPlanKeys(s3, bucket, plan);
   const perFolder = {};
   keys.forEach((key) => {
+    // count only the folder-root artifacts (device.json/config/schema) - log
+    // file sessions live in subfolders and are not this script's concern
+    if (key.split("/").length !== 2) return;
     const folder = key.split("/")[0];
     perFolder[folder] = (perFolder[folder] || 0) + 1;
   });
@@ -406,23 +567,50 @@ const modeVerify = async () => {
 };
 
 const modeTeardown = async () => {
-  if (!/^[0-9A-F]{2,7}$/.test(ID_PREFIX)) {
+  if (PROFILE !== "real" && !/^[0-9A-F]{2,7}$/.test(ID_PREFIX)) {
     usage("refusing to delete: --prefix must be 2-7 hex characters");
   }
   const { s3, bucket } = makeClient();
-  const { keys } = await listAll(s3, bucket, ID_PREFIX, undefined);
+  const scope = PROFILE === "real" ? "the seeded TRUCK fleet" : ID_PREFIX + "*";
+
+  let keys;
+  if (PROFILE === "real") {
+    // no shared prefix: walk the regenerated plan, and only touch folders
+    // whose device.json carries the profile's meta marker - a random id can
+    // never make teardown delete a folder this script did not seed
+    keys = [];
+    for (const entry of buildPlan()) {
+      const folderKeys = (await listAll(s3, bucket, entry.id + "/", undefined)).keys;
+      if (!folderKeys.length) continue;
+      let meta = null;
+      try {
+        const res = await s3
+          .getObject({ Bucket: bucket, Key: entry.id + "/device.json" })
+          .promise();
+        meta = JSON.parse(res.Body.toString()).log_meta;
+      } catch (e) {}
+      if (typeof meta === "string" && meta.indexOf("TRUCK ") === 0) {
+        keys.push(...folderKeys);
+      } else {
+        console.log("  skipping " + entry.id + " (no TRUCK device.json - not ours)");
+      }
+    }
+  } else {
+    keys = (await listAll(s3, bucket, ID_PREFIX, undefined)).keys;
+  }
+
   if (!keys.length) {
-    console.log("  nothing under " + ID_PREFIX + "*");
+    console.log("  nothing to delete for " + scope);
     return;
   }
   if (!has("yes")) {
     console.log(
-      "  would delete " + keys.length + " objects under " + ID_PREFIX +
-        "* - re-run with --yes to confirm"
+      "  would delete " + keys.length + " objects (" + scope +
+        ") - re-run with --yes to confirm"
     );
     return;
   }
-  console.log("  deleting " + keys.length + " objects under " + ID_PREFIX + "*");
+  console.log("  deleting " + keys.length + " objects (" + scope + ")");
   for (let i = 0; i < keys.length; i += 1000) {
     await s3
       .deleteObjects({
@@ -432,7 +620,7 @@ const modeTeardown = async () => {
       .promise();
     console.log("  ... " + Math.min(i + 1000, keys.length) + "/" + keys.length);
   }
-  console.log("  remaining: " + (await listAll(s3, bucket, ID_PREFIX, undefined)).keys.length);
+  console.log("  remaining: " + (await listPlanKeys(s3, bucket, buildPlan())).length);
 };
 
 const MODES = {
