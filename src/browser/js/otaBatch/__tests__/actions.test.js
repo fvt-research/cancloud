@@ -3,38 +3,38 @@
 // (web + global fetch), the submit engine, history and crypto mocked. cache and
 // evaluate run for real so evaluations are authentic.
 
-jest.mock("../../web", () => ({
+vi.mock("../../web", () => ({
   __esModule: true,
   default: {
-    LoggedIn: jest.fn(() => true),
-    PresignedGet: jest.fn(({ bucket, object }) =>
+    LoggedIn: vi.fn(() => true),
+    PresignedGet: vi.fn(({ bucket, object }) =>
       Promise.resolve({ url: "http://fake/" + bucket + "/" + object })
     ),
-    PutObject: jest.fn(() => Promise.resolve())
+    PutObject: vi.fn(() => Promise.resolve())
   }
 }));
-jest.mock("../../history", () => ({
+vi.mock("../../history", () => ({
   __esModule: true,
-  default: { push: jest.fn(), location: { pathname: "/ota-batch-manager/" } }
+  default: { push: vi.fn(), location: { pathname: "/ota-batch-manager/" } }
 }));
-jest.mock("../../dashboardStatus/actions", () => ({
-  fetchDeviceFileContentAll: jest.fn(() => () => Promise.resolve([]))
+vi.mock("../../dashboardStatus/actions", () => ({
+  fetchDeviceFileContentAll: vi.fn(() => () => Promise.resolve([]))
 }));
-jest.mock("../../alert/actions", () => ({
-  set: jest.fn((alert) => ({ type: "alert/SET", alert }))
+vi.mock("../../alert/actions", () => ({
+  set: vi.fn((alert) => ({ type: "alert/SET", alert }))
 }));
-jest.mock("../submitEngine", () => ({
-  startRun: jest.fn(() => Promise.resolve()),
-  retryRun: jest.fn(() => Promise.resolve()),
-  abortRun: jest.fn(),
-  invalidateRun: jest.fn()
+vi.mock("../submitEngine", () => ({
+  startRun: vi.fn(() => Promise.resolve()),
+  retryRun: vi.fn(() => Promise.resolve()),
+  abortRun: vi.fn(),
+  invalidateRun: vi.fn()
 }));
-jest.mock("config-editor-tools", () => {
-  const actual = jest.requireActual("config-editor-tools");
+vi.mock("config-editor-tools", async () => {
+  const actual = await vi.importActual("config-editor-tools");
   return {
     ...actual,
-    encryptionCrypto: { ...actual.encryptionCrypto, deriveEncryptionMaterial: jest.fn() },
-    encryptionFields: { ...actual.encryptionFields, buildEncryptedDelta: jest.fn() }
+    encryptionCrypto: { ...actual.encryptionCrypto, deriveEncryptionMaterial: vi.fn() },
+    encryptionFields: { ...actual.encryptionFields, buildEncryptedDelta: vi.fn() }
   };
 });
 
@@ -140,7 +140,7 @@ beforeEach(() => {
   encryptionCrypto.deriveEncryptionMaterial.mockReset();
   encryptionFields.buildEncryptedDelta.mockReset();
   alertActions.set.mockClear();
-  global.fetch = jest.fn();
+  global.fetch = vi.fn();
 });
 
 describe("loadPartialFile", () => {
@@ -311,7 +311,7 @@ describe("async evaluation wave (promise chaining + merged-result stability)", (
   let nowSpy = null;
   const installSlicedClock = () => {
     let t = 1700000000000;
-    nowSpy = jest.spyOn(Date, "now").mockImplementation(() => (t += 30));
+    nowSpy = vi.spyOn(Date, "now").mockImplementation(() => (t += 30));
   };
   afterEach(() => {
     if (nowSpy) nowSpy.mockRestore();
@@ -334,7 +334,7 @@ describe("async evaluation wave (promise chaining + merged-result stability)", (
       deviceFiles[id] = deviceJsonFor(id);
     });
     const configText = JSON.stringify(baseConfig("http://s3.example.com"), null, 2);
-    global.fetch = jest.fn((url) =>
+    global.fetch = vi.fn((url) =>
       Promise.resolve({
         ok: true,
         text: () =>
@@ -454,7 +454,7 @@ describe("retryFailed", () => {
       [C]: "{ broken json"
     };
 
-    global.fetch = jest.fn((url) => {
+    global.fetch = vi.fn((url) => {
       if (url.indexOf("/schema-") > -1) {
         return Promise.resolve({ ok: true, text: () => Promise.resolve(JSON.stringify(SCHEMA)) });
       }
@@ -568,14 +568,14 @@ describe("downloadNewConfig", () => {
   beforeEach(() => {
     createdAnchors = [];
     realCreate = document.createElement.bind(document);
-    jest.spyOn(document, "createElement").mockImplementation((tag) => {
+    vi.spyOn(document, "createElement").mockImplementation((tag) => {
       const el = realCreate(tag);
       if (tag === "a") createdAnchors.push(el);
       return el;
     });
-    jest.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
   });
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
 
   it("downloads the exact merged text in partial mode", async () => {
     const id = "AABBCCDD";

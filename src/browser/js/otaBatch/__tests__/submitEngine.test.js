@@ -6,29 +6,29 @@
 // correct abort / stale-run / retry behaviour.
 
 // mock only the S3 surface (web) - keep cache/evaluate/selectors real
-jest.mock("../../web", () => ({
+vi.mock("../../web", () => ({
   __esModule: true,
   default: {
-    LoggedIn: jest.fn(() => true),
-    PresignedGet: jest.fn(() => Promise.resolve({ url: "http://fake-s3/get" })),
-    PutObject: jest.fn(() => Promise.resolve())
+    LoggedIn: vi.fn(() => true),
+    PresignedGet: vi.fn(() => Promise.resolve({ url: "http://fake-s3/get" })),
+    PutObject: vi.fn(() => Promise.resolve())
   }
 }));
 
 // surgical crypto mock: keep the pure analyzers (analyzeConfigEncryption,
 // validateDeviceFile, detectDeviceTypeFromConfig, ...) real; stub only the
 // WebCrypto-backed functions (jsdom under jest 23 has no crypto.subtle)
-jest.mock("config-editor-tools", () => {
-  const actual = jest.requireActual("config-editor-tools");
+vi.mock("config-editor-tools", async () => {
+  const actual = await vi.importActual("config-editor-tools");
   return {
     ...actual,
     encryptionCrypto: {
       ...actual.encryptionCrypto,
-      deriveEncryptionMaterial: jest.fn()
+      deriveEncryptionMaterial: vi.fn()
     },
     encryptionFields: {
       ...actual.encryptionFields,
-      buildEncryptedDelta: jest.fn()
+      buildEncryptedDelta: vi.fn()
     }
   };
 });
@@ -168,7 +168,7 @@ beforeEach(() => {
   web.PutObject.mockReset().mockReturnValue(Promise.resolve());
   encryptionCrypto.deriveEncryptionMaterial.mockReset();
   encryptionFields.buildEncryptedDelta.mockReset();
-  global.fetch = jest.fn();
+  global.fetch = vi.fn();
 });
 
 describe("happy path", () => {

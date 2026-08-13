@@ -1,8 +1,10 @@
-jest.mock("../../web", () => ({
-  PresignedPutObject: jest.fn(() => Promise.resolve({ url: "http://fake-s3/put" }))
+vi.mock("../../web", () => ({
+  default: {
+  PresignedPutObject: vi.fn(() => Promise.resolve({ url: "http://fake-s3/put" }))
+  }
 }))
-jest.mock("../../buckets/actions", () => ({
-  fetchBucketsPostUpload: jest.fn(path => ({ type: "TEST_FETCH_BUCKETS", path }))
+vi.mock("../../buckets/actions", () => ({
+  fetchBucketsPostUpload: vi.fn(path => ({ type: "TEST_FETCH_BUCKETS", path }))
 }))
 
 import web from "../../web"

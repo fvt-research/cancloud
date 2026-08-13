@@ -47,7 +47,7 @@ import { getS3Endpoint } from './s3-endpoints.js'
 
 import { NotificationConfig, NotificationPoller } from './notification'
 
-var Package = require('../../package.json')
+import Package from '../../package.json'
 
 export class Client {
   constructor(params) {
@@ -638,7 +638,7 @@ export class Client {
   // * `callback(err)` _function_: callback function is called with non `null` value in case of error
   removeIncompleteUpload(bucketName, objectName, cb) {
     if (!isValidBucketName(bucketName)) {
-      throw new errors.isValidBucketNameError('Invalid bucket name: ' + bucketName)
+      throw new errors.InvalidBucketNameError('Invalid bucket name: ' + bucketName)
     }
     if (!isValidObjectName(objectName)) {
       throw new errors.InvalidObjectNameError(`Invalid object name: ${objectName}`)

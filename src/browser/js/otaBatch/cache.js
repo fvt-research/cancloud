@@ -6,8 +6,7 @@
 // maps; the table/evaluation read the bulky parts from here.
 
 import Ajv from "ajv";
-
-const { crc32 } = require("crc");
+import { crc32 } from "crc";
 
 // the app-wide crc32 recipe (dashboardStatus/actions.js, encryptionFields.js)
 export const crc32Hex = (text) =>

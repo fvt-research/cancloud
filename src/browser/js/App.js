@@ -18,10 +18,10 @@ import React from "react";
 import { Route, Switch } from "react-router-dom";
 
 import Editor from "./editorNew/Editor";
-const Browser =  require("./browser/Browser");
-const Login =  require("./browser/Login");
-const DashboardStatus = require("./dashboardStatus");
-const OtaBatchManager = require("./otaBatch");
+import Browser from "./browser/Browser";
+import Login from "./browser/Login";
+import DashboardStatus from "./dashboardStatus";
+import OtaBatchManager from "./otaBatch";
 
 export const App = () => {
   return (

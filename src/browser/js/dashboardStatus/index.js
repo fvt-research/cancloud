@@ -1,3 +1,3 @@
 import DashboardStatus from "./DashboardStatus";
 
-module.exports = DashboardStatus;
+export default DashboardStatus;

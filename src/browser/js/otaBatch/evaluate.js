@@ -14,7 +14,7 @@ import { classifyCurrentEncryption } from "../encryptionLock";
 
 export { classifyCurrentEncryption };
 
-const merge = require("deepmerge");
+import merge from "deepmerge";
 
 const overwriteMerge = (destinationArray, sourceArray) => sourceArray;
 

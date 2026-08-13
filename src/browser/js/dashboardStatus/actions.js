@@ -29,8 +29,8 @@ export const CLEAR_DATA_FILES = "dashboardStatus/CLEAR_DATA_FILES";
 export const SET_DEVICES_FILES_COUNT =
   "dashboardStatus/SET_DEVICES_FILES_COUNT";
 
-var speedDate = require("speed-date");
-const { crc32 } = require("crc");
+import speedDate from "speed-date";
+import { crc32 } from "crc";
 
 const loggerRegex = new RegExp(/([0-9A-Fa-f]){8}/);
 const loggerConfigRegex = new RegExp(
@@ -398,6 +398,11 @@ export const fetchDeviceFileContentAll = deviceFileObjects => {
   const expiry = 5 * 24 * 60 * 60 + 1 * 60 * 60 + 0 * 60;
 
   return function(dispatch, getState) {
+    // a missing device.json (404) is a normal condition (e.g. a device folder
+    // that has not connected yet) - log it and skip the device silently.
+    // Only unexpected failures (network, 5xx, auth) alert the user, and only
+    // ONCE per batch rather than once per failing device
+    let unexpectedFailures = 0;
     return Promise.all(
       deviceFileObjects.map(deviceFileObject =>
         web
@@ -408,6 +413,14 @@ export const fetchDeviceFileContentAll = deviceFileObjects => {
           })
           .then(res => statusRequestQueue.add(() => fetch(res.url)))
           .then(r => {
+            if (r.status == 404) {
+              console.log(
+                "No device.json found for " +
+                  deviceFileObject.deviceId +
+                  " - skipping"
+              );
+              return null;
+            }
             if (!r.ok) {
               throw new Error("Failed to fetch device.json [" + r.status + "]");
             }
@@ -422,17 +435,24 @@ export const fetchDeviceFileContentAll = deviceFileObjects => {
               }));
           })
           .catch(e => {
-            dispatch(
-              alertActions.set({
-                type: "danger",
-                message: "Failed to fetch information for some devices - try refreshing",
-                autoClear: true
-              })
+            console.error(
+              "Failed to fetch device.json for " + deviceFileObject.deviceId,
+              e
             );
+            unexpectedFailures++;
             return null;
           })
       )
     ).then(results => {
+      if (unexpectedFailures > 0) {
+        dispatch(
+          alertActions.set({
+            type: "danger",
+            message: "Failed to fetch information for some devices - try refreshing",
+            autoClear: true
+          })
+        );
+      }
       const loaded = results.filter(result => result != null);
 
       dispatch(

@@ -58,7 +58,7 @@ const path = require("path");
 const AWS = require("aws-sdk");
 const Ajv = require("ajv");
 const { crc32 } = require("crc");
-const validatorAjv6 = require("@rjsf/validator-ajv6").default;
+const validatorAjv8 = require("@rjsf/validator-ajv8").default;
 const { getDefaultFormState } = require("@rjsf/utils");
 
 const SCHEMA_DIR = path.join(
@@ -146,7 +146,7 @@ const loadSchema = (family, revision) =>
 // fix exactly those so the result validates for every family x revision
 const buildConfig = (family, revision) => {
   const schema = loadSchema(family, revision);
-  const base = getDefaultFormState(validatorAjv6, schema, undefined, schema);
+  const base = getDefaultFormState(validatorAjv8, schema, undefined, schema);
   if (base.rtc) {
     base.rtc.sync = 0; // "retain current time" - no required siblings
     ["manual_date_time", "message", "valid_signal", "time_signal", "tolerance", "ntp_server"].forEach(
@@ -191,7 +191,7 @@ const addRealCredentials = (config, schema) => {
   if (conn.wifi) {
     // item defaults from the schema (covers required fields like minrssi)
     const itemSchema = connSchema.properties.wifi.properties.accesspoint.items;
-    const item = getDefaultFormState(validatorAjv6, itemSchema, undefined, itemSchema);
+    const item = getDefaultFormState(validatorAjv8, itemSchema, undefined, itemSchema);
     conn.wifi.keyformat = 0;
     conn.wifi.accesspoint = [{ ...item, ssid: "FleetWiFi", pwd: "TruckFleet2026" }];
   }
@@ -208,7 +208,7 @@ const addRealCredentials = (config, schema) => {
     : null;
   const s3Schema = branch ? branch.properties.s3 : connSchema.properties.s3;
   if (!s3Schema) return;
-  const s3Block = getDefaultFormState(validatorAjv6, s3Schema, conn.s3, s3Schema);
+  const s3Block = getDefaultFormState(validatorAjv8, s3Schema, conn.s3, s3Schema);
   s3Block.server = { ...(s3Block.server || {}), ...DUMMY_S3_SERVER };
   conn.s3 = s3Block;
 };

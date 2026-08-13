@@ -4,18 +4,18 @@
 // revision, and one 5xx retry with a fresh presigned URL.
 
 // mock only the S3 surface (web) - keep cache/evaluate real
-jest.mock("../../web", () => ({
+vi.mock("../../web", () => ({
   __esModule: true,
   default: {
-    LoggedIn: jest.fn(() => true),
-    PresignedGet: jest.fn(() => Promise.resolve({ url: "http://fake-s3/get" })),
-    PresignedPutObject: jest.fn(() =>
+    LoggedIn: vi.fn(() => true),
+    PresignedGet: vi.fn(() => Promise.resolve({ url: "http://fake-s3/get" })),
+    PresignedPutObject: vi.fn(() =>
       Promise.resolve({ url: "http://fake-s3/put" })
     ),
-    PresignedPutObjectRaw: jest.fn(() =>
+    PresignedPutObjectRaw: vi.fn(() =>
       Promise.resolve({ url: "http://fake-s3/put" })
     ),
-    PutObject: jest.fn(() => Promise.resolve())
+    PutObject: vi.fn(() => Promise.resolve())
   }
 }));
 
@@ -114,7 +114,7 @@ beforeEach(() => {
   FakeXHR.instances = [];
   FakeXHR.script = [];
   global.XMLHttpRequest = FakeXHR;
-  global.fetch = jest.fn();
+  global.fetch = vi.fn();
 });
 
 afterEach(() => {

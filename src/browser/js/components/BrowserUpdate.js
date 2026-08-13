@@ -15,7 +15,7 @@
  */
 
 import React from "react";
-import connect from "react-redux/lib/components/connect";
+import { connect } from "react-redux";
 
 import Tooltip from "react-bootstrap/lib/Tooltip";
 import OverlayTrigger from "react-bootstrap/lib/OverlayTrigger";

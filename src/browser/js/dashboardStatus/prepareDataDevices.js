@@ -1,3 +1,4 @@
+import _ from "lodash";
 import Moment from "moment";
 import { demoMode, demoDate } from "../utils";
 
@@ -44,24 +45,30 @@ export const horizontalBarOptionsFunc = (devices) => {
       },
     },
     scales: {
+      // chart.js 2.9 stopped drawing the axis border when gridLines.display is
+      // false (2.8 kept it) - drawOnChartArea:false hides the grid lines while
+      // keeping the border. maxBarThickness moved to the datasets (the axis-
+      // level option is deprecated in 2.9). drawTicks:false also removes the
+      // space the tick marks reserved, so ticks.padding restores it
+      // (10 = chart.js default tick length)
       yAxes: [
         {
-          maxBarThickness: 15,
           display: true,
-          gridLines: { display: false },
+          gridLines: { display: true, drawOnChartArea: false, drawTicks: false },
           ticks: {
             beginAtZero: true,
+            padding: 10,
           },
         },
       ],
       xAxes: [
         {
-          maxBarThickness: 5,
-          gridLines: { display: false },
+          gridLines: { display: true, drawOnChartArea: false, drawTicks: false },
           ticks: {
             beginAtZero: true,
             maxRotation: 0,
             max: devices ? devices : 0,
+            padding: 10,
           },
           scaleLabel: {
             display: true,
@@ -348,6 +355,7 @@ export const prepareDataDevices = (
             " "
           ),
           label: "#devices",
+          maxBarThickness: 15,
         },
       ],
       labels: deviceStatusLabel,
@@ -375,6 +383,7 @@ export const prepareDataDevices = (
             " "
           ),
           label: "#devices",
+          maxBarThickness: 15,
         },
       ],
       labels: deviceStorageUsedLabel,

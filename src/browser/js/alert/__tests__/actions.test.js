@@ -21,7 +21,7 @@ import * as actionsAlert from "../actions"
 const middlewares = [thunk]
 const mockStore = configureStore(middlewares)
 
-jest.useFakeTimers()
+vi.useFakeTimers()
 
 describe("Alert actions", () => {
   it("creates alert/SET action", () => {
@@ -50,7 +50,7 @@ describe("Alert actions", () => {
       }
     ]
     store.dispatch(actionsAlert.set({ message: "Test alert" }))
-    jest.runAllTimers()
+    vi.runAllTimers()
     const actions = store.getActions()
     expect(actions).toEqual(expectedActions)
   })

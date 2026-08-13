@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-const S3Explorer = require("../../sdk/s3explorer");
+import S3Explorer from "../../sdk/s3explorer";
 
 export default class JSONrpc {
   constructor() {

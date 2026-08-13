@@ -20,13 +20,14 @@ import * as actionsObjects from "../actions"
 import * as alertActions from "../../alert/actions"
 import history from "../../history"
 
-jest.mock("../../web", () => ({
-  LoggedIn: jest
+vi.mock("../../web", () => ({
+  default: {
+  LoggedIn: vi
     .fn(() => true)
     .mockReturnValueOnce(true)
     .mockReturnValueOnce(false)
     .mockReturnValueOnce(false),
-  ListObjects: jest.fn(({ bucketName }) => {
+  ListObjects: vi.fn(({ bucketName }) => {
     if (bucketName === "test-deny") {
       return Promise.reject({
         message: "listobjects is denied"
@@ -40,19 +41,19 @@ jest.mock("../../web", () => ({
       })
     }
   }),
-  RemoveObject: jest.fn(({ bucketName, objects }) => {
+  RemoveObject: vi.fn(({ bucketName, objects }) => {
     if (!bucketName) {
       return Promise.reject({ message: "Invalid bucket" })
     }
     return Promise.resolve({})
   }),
-  PresignedGet: jest.fn(({ bucket, object }) => {
+  PresignedGet: vi.fn(({ bucket, object }) => {
     if (!bucket) {
       return Promise.reject({ message: "Invalid bucket" })
     }
     return Promise.resolve({ url: "https://test.com/bk1/pre1/b.txt" })
   }),
-  CreateURLToken: jest
+  CreateURLToken: vi
     .fn()
     .mockImplementationOnce(() => {
       return Promise.resolve({ token: "test" })
@@ -63,6 +64,7 @@ jest.mock("../../web", () => ({
     .mockImplementationOnce(() => {
       return Promise.resolve({ token: "test" })
     })
+  }
 }))
 
 const middlewares = [thunk]

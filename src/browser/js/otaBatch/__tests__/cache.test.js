@@ -63,7 +63,7 @@ describe("setSchema / getValidator (content-hash dedup)", () => {
   const schemaText = JSON.stringify({ type: "object", properties: { a: { type: "integer" } } });
 
   it("compiles identical schema text only once and shares the validator", () => {
-    const spy = jest.spyOn(Ajv.prototype, "compile");
+    const spy = vi.spyOn(Ajv.prototype, "compile");
     cache.clearAll();
     const a = cache.setSchema("DEV_A", schemaText);
     const b = cache.setSchema("DEV_B", schemaText);

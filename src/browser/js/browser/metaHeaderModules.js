@@ -1,6 +1,6 @@
 import React, { Component } from "react";
 import { Bar } from "react-chartjs-2";
-var speedDate = require("speed-date");
+import speedDate from "speed-date";
 import { barOptionsFunc } from "../dashboardStatus/prepareData";
 import { demoMode, demoDate, sdValidityTest, canedgeTypeName } from "../utils";
 import Moment from "moment";
@@ -208,7 +208,11 @@ export const prepareDeviceData = mf4Objects => {
       {
         type: "bar",
         data: Object.values(uploadedPerTime),
-        backgroundColor: "#46a5e0"
+        backgroundColor: "#46a5e0",
+        // chart.js 2.9 reads these from the dataset, not the axis (see
+        // barOptionsFunc) - the period here is fixed at 7*24 h
+        barPercentage: 0.9,
+        maxBarThickness: 5
       }
     ],
     labels: Object.keys(uploadedPerTime)

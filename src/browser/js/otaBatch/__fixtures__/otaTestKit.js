@@ -2,13 +2,14 @@
 // (NOT __tests__/) so jest's testMatch does not collect it as an empty suite.
 // Pulls only ajv / @rjsf / deepmerge / crc-based cache - no config-editor-base.
 
+import fs from "fs";
+import path from "path";
 import Ajv from "ajv";
-import validatorAjv6 from "@rjsf/validator-ajv6";
+import validatorAjv8 from "@rjsf/validator-ajv8";
 import { getDefaultFormState } from "@rjsf/utils";
+import merge from "deepmerge";
 
 import * as cache from "../cache";
-
-const merge = require("deepmerge");
 
 // ---------------------------------------------------------------------------
 // device families + revisions (matches encryptionFields DEVICE_TYPE_MAP and the
@@ -33,7 +34,17 @@ Object.keys(DEVICE_FAMILIES).forEach((device) => {
 // real schemas + validators
 
 export const loadSchema = (device, rev) =>
-  require(`config-editor-base/dist/schema/${device}/schema-${rev}.json`);
+  JSON.parse(
+    fs.readFileSync(
+      path.join(
+        process.cwd(),
+        "node_modules/config-editor-base/dist/schema",
+        device,
+        `schema-${rev}.json`
+      ),
+      "utf8"
+    )
+  );
 
 // the exact ajv recipe used in production (cache.js:49)
 export const compileValidator = (schema) =>
@@ -54,7 +65,7 @@ export const compileViaCache = (deviceId, schema) => {
 // filter.id[0] item, and gnss.geofence). Use with newErrorsVsBaseline().
 export const generatedBaseline = (device, rev) => {
   const schema = loadSchema(device, rev);
-  return getDefaultFormState(validatorAjv6, schema, undefined, schema);
+  return getDefaultFormState(validatorAjv8, schema, undefined, schema);
 };
 
 const VALID_FILTER = {
@@ -148,7 +159,7 @@ export const fakeFetchResponse = (text, { ok = true, status = 200 } = {}) => ({
 // install a scriptable global.fetch; returns a restore() to call in afterEach
 export const installFetchMock = (impl) => {
   const real = global.fetch;
-  global.fetch = jest.fn(impl);
+  global.fetch = vi.fn(impl);
   return () => {
     global.fetch = real;
   };

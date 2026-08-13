@@ -3,47 +3,47 @@
 // trio (firmwareSpan/parseFirmwareBin/checkKnownFirmware) and the bundled
 // schema lookup (loadFile) are mocked - everything else runs for real.
 
-jest.mock("../../web", () => ({
+vi.mock("../../web", () => ({
   __esModule: true,
   default: {
-    LoggedIn: jest.fn(() => true),
-    PresignedGet: jest.fn(({ bucket, object }) =>
+    LoggedIn: vi.fn(() => true),
+    PresignedGet: vi.fn(({ bucket, object }) =>
       Promise.resolve({ url: "http://fake/" + bucket + "/" + object })
     ),
-    PutObject: jest.fn(() => Promise.resolve())
+    PutObject: vi.fn(() => Promise.resolve())
   }
 }));
-jest.mock("../../history", () => ({
+vi.mock("../../history", () => ({
   __esModule: true,
-  default: { push: jest.fn(), location: { pathname: "/ota-batch-manager/" } }
+  default: { push: vi.fn(), location: { pathname: "/ota-batch-manager/" } }
 }));
-jest.mock("../../dashboardStatus/actions", () => ({
-  fetchDeviceFileContentAll: jest.fn(() => () => Promise.resolve([]))
+vi.mock("../../dashboardStatus/actions", () => ({
+  fetchDeviceFileContentAll: vi.fn(() => () => Promise.resolve([]))
 }));
-jest.mock("../../alert/actions", () => ({
-  set: jest.fn((alert) => ({ type: "alert/SET", alert }))
+vi.mock("../../alert/actions", () => ({
+  set: vi.fn((alert) => ({ type: "alert/SET", alert }))
 }));
-jest.mock("../submitEngine", () => ({
-  startRun: jest.fn(() => Promise.resolve()),
-  retryRun: jest.fn(() => Promise.resolve()),
-  abortRun: jest.fn(),
-  invalidateRun: jest.fn()
+vi.mock("../submitEngine", () => ({
+  startRun: vi.fn(() => Promise.resolve()),
+  retryRun: vi.fn(() => Promise.resolve()),
+  abortRun: vi.fn(),
+  invalidateRun: vi.fn()
 }));
-jest.mock("config-editor-tools", () => {
-  const actual = jest.requireActual("config-editor-tools");
+vi.mock("config-editor-tools", async () => {
+  const actual = await vi.importActual("config-editor-tools");
   return {
     ...actual,
     migration: {
       ...actual.migration,
-      firmwareSpan: jest.fn(() => 128),
-      parseFirmwareBin: jest.fn(),
-      checkKnownFirmware: jest.fn(() => true)
+      firmwareSpan: vi.fn(() => 128),
+      parseFirmwareBin: vi.fn(),
+      checkKnownFirmware: vi.fn(() => true)
     }
   };
 });
-jest.mock("config-editor-base", () => {
-  const actual = jest.requireActual("config-editor-base");
-  return { ...actual, loadFile: jest.fn() };
+vi.mock("config-editor-base", async () => {
+  const actual = await vi.importActual("config-editor-base");
+  return { ...actual, loadFile: vi.fn() };
 });
 
 import { createStore, combineReducers, applyMiddleware } from "redux";
@@ -136,7 +136,7 @@ const fakeBin = (size = 1024) => {
   return {
     name: "firmware.bin",
     size,
-    slice: jest.fn(() => ({ arrayBuffer: () => Promise.resolve(buf) }))
+    slice: vi.fn(() => ({ arrayBuffer: () => Promise.resolve(buf) }))
   };
 };
 
@@ -163,7 +163,7 @@ beforeEach(() => {
   migration.checkKnownFirmware.mockClear().mockReturnValue(true);
   loadFile.mockReset().mockReturnValue(SCHEMA);
   alertActions.set.mockClear();
-  global.fetch = jest.fn();
+  global.fetch = vi.fn();
 });
 
 describe("loadFirmwareFile", () => {

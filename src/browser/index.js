@@ -14,14 +14,15 @@
  * limitations under the License.
  */
 
-import "babel-polyfill";
+import "./requireShim";
+
 import "./less/main.less";
 import "font-awesome/css/font-awesome.css";
 import "material-design-iconic-font/dist/css/material-design-iconic-font.min.css";
 import "./css/diff2html.min.css"
 
 import React from "react";
-import ReactDOM from "react-dom";
+import { createRoot } from "react-dom/client";
 import { Router } from "react-router-dom";
 import { Provider } from "react-redux";
 
@@ -32,13 +33,13 @@ import App from "./js/App";
 
 const store = configureStore();
 
-ReactDOM.render(
+// No <StrictMode>: legacy lifecycles and React-16-era libs are load-bearing.
+createRoot(document.getElementById("root")).render(
   <Provider store={store}>
     <Router history={history}>
       <App />
     </Router>
-  </Provider>,
-  document.getElementById("root")
+  </Provider>
 );
 
 hideLoader();

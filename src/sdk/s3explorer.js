@@ -769,4 +769,4 @@ S3Explorer.prototype.getPartialObject = promisify(
   S3Explorer.prototype.getPartialObject
 );
 
-module.exports = S3Explorer;
+export default S3Explorer;

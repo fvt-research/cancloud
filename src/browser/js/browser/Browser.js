@@ -39,4 +39,4 @@ class Browser extends React.Component {
   }
 }
 
-module.exports = connect(state => state)(Browser);
+export default connect(state => state)(Browser);

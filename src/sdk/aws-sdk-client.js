@@ -1,4 +1,8 @@
-import AWS from "aws-sdk";
+// vite.config.mjs aliases aws-sdk to its prebuilt browser bundle (the source
+// entry's circular CJS requires break under Rollup's prod interop). The bundle
+// exports nothing importable - it sets window.AWS as a side effect.
+import "aws-sdk";
+const AWS = window.AWS;
 
 class AwsSdk {
   constructor(accessKeyId, secretAccessKey, endpoint) {

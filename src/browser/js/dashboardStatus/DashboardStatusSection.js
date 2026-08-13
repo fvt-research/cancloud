@@ -20,8 +20,9 @@ import {
 import DeviceTable from "./DeviceTable";
 import PeriodMenu from "./PeriodMenu";
 
+import statusConfig from "../../schema/status-config-03.01.json";
+
 const resWide = window.innerWidth > 2000 ? 2 : window.innerWidth > 1800 ? 1 : 0;
-const statusConfig = require(`../../schema/status-config-03.01.json`);
 const confDash = statusConfig.dashboard;
 const chDefaults = confDash.default_settings;
 const chColors = chDefaults.chart_colors.split(" ");

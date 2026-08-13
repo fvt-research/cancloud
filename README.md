@@ -20,7 +20,7 @@ At [CSS Electronics](https://www.csselectronics.com), we always host the [latest
 7. Batch-update your fleet over-the-air via the OTA batch manager (configuration, firmware or TLS certificates) with a sortable & searchable device table
 8. Monitor your fleet via the status dashboard, incl. a sortable device table
 9. Add device meta data (incl. pictures and searchable meta name)
-10. Easily customize the portal with your own logo and CSS styling (see `src/browser/index.html`)
+10. Easily customize the portal with your own logo and CSS styling (see `index.html` and `public/customize-css/`)
 
 ```
 ---
@@ -64,8 +64,8 @@ If you wish to customize your self-hosted version of CANcloud, you can do so wit
 #### Deployment (development mode)
 
 1. Clone the repository
-2. Run `npm install` in the folder to install application dependencies (tested on `node: 'v16.16.0'` and `npm: '8.11.0'`)
-3. Run `npm start` to run application in development mode
+2. Run `npm install` in the folder to install application dependencies (requires `node >= 20`, tested on `node: 'v24.13.0'`)
+3. Run `npm start` to run application in development mode (Vite dev server on http://localhost:8080)
 
 #### Deployment (production) 
 
@@ -92,14 +92,14 @@ Note the following:
 ---
 ### Testing
 
-CANcloud ships a Jest + Enzyme unit-test suite living alongside the source under `src/browser/js/**/__tests__`.
+CANcloud ships a vitest unit-test suite living alongside the source under `src/browser/js/**/__tests__`.
 
 - Run the full suite: `npm test` (or, on Windows, double-click / run `run-tests.bat`)
-- Run a subset by name: `run-tests.bat objects` or `npx jest --runInBand objects`
+- Run a subset by name: `run-tests.bat objects` or `npx vitest run objects`
 
 Notes:
-- Tests run serially (`--runInBand`). On the pinned toolchain (jest 23 / node 16.16.0) parallel workers can contend and produce empty output.
 - The suite is fully client-side: the S3 layer (`web`) is mocked, so no live server or credentials are needed to run the tests.
+- The legacy enzyme-based component tests are quarantined (excluded, not deleted) in `vitest.config.mjs` - enzyme has no React 18 adapter. The logic/thunk suites all run.
 
 #### Scale testing (synthetic fleet)
 

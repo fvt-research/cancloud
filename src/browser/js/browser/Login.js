@@ -19,20 +19,22 @@ import { connect } from "react-redux";
 import logo from "../../img/logo.png";
 import Alert from "../alert/Alert";
 import * as actionsAlert from "../alert/actions";
-import * as actionsBrowser from "./actions";
 import InputGroup from "./InputGroup";
 import web from "../web";
 import { Redirect } from "react-router-dom";
 import history from "../history";
 import { demoMode } from "../utils";
 import Files from "react-files";
-const { detect } = require('detect-browser')
+import { detect } from "detect-browser";
 const browser = detect()
 
 let news = "";
 
-try {
-  let newsJson = require("../../schema/news.json");
+// news.json is gitignored and may be absent - import.meta.glob of a
+// non-matching pattern yields {}, replacing the old try/catch require
+const newsModules = import.meta.glob("../../schema/news.json", { eager: true });
+const newsJson = (newsModules["../../schema/news.json"] || {}).default;
+if (newsJson) {
   news = newsJson.news;
   news = (
     <span>
@@ -46,26 +48,22 @@ try {
       </a>
     </span>
   );
-} catch (err) {}
+}
 
 export class Login extends React.Component {
   constructor(props) {
     super(props);
 
-    if (demoMode) {
-      try {
-        let demo = require("../../schema/demo-credentials.json");
-        this.state = demo.demoCredentials;
-      } catch (err) {
-        this.state = {
-          accessKey: "",
-          secretKey: "",
-          endPoint: "",
-          region: "",
-          bucketName: "",
-          jsonFileName: "",
-        };
-      }
+    // demo-credentials.json is gitignored and may be absent - the eager glob
+    // yields {} in that case (replaces the old try/catch require)
+    const demoModules = import.meta.glob("../../schema/demo-credentials.json", {
+      eager: true,
+    });
+    const demo = (demoModules["../../schema/demo-credentials.json"] || {})
+      .default;
+
+    if (demoMode && demo) {
+      this.state = demo.demoCredentials;
     } else {
       this.state = {
         accessKey: "",
@@ -397,15 +395,10 @@ const mapDispatchToProps = (dispatch) => {
     showAlert: (type, message) =>
       dispatch(actionsAlert.set({ type: type, message: message })),
     clearAlert: () => dispatch(actionsAlert.clear()),
-    login: (accessKey, secretKey, endPoint, region, bucketName) =>
-      dispatch(
-        actionsBrowser.login(accessKey, secretKey, endPoint,region, bucketName)
-      ),
+    // note: no `login` action - handleSubmit calls web.Login() directly
   };
 };
 
-module.exports = connect((state) => state, mapDispatchToProps)(Login);
-// Re-expose the unconnected class so `import { Login }` resolves (the line above
-// reassigns module.exports and would otherwise clobber the `export class Login`).
-// App.js consumes the default connected component via require(); tests import { Login }.
-module.exports.Login = Login;
+// App.js consumes the connected default export; tests import { Login } (the
+// unconnected class, exported where it is declared above).
+export default connect((state) => state, mapDispatchToProps)(Login);

@@ -122,11 +122,6 @@ export default (
         ...state,
         sortBy: action.sortBy,
       };
-    case actionsObjects.SET_SORT_BY:
-      return {
-        ...state,
-        sortBy: action.sortBy,
-      };
     case actionsObjects.SET_SORT_ORDER:
       return {
         ...state,

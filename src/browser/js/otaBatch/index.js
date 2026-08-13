@@ -1,3 +1,3 @@
 import OtaBatchManager from "./OtaBatchManager";
 
-module.exports = OtaBatchManager;
+export default OtaBatchManager;
