@@ -1,8 +1,8 @@
 import React, { Component } from "react";
 import { Bar } from "react-chartjs-2";
-var speedDate = require("speed-date");
+import speedDate from "speed-date";
 import { barOptionsFunc } from "../dashboardStatus/prepareData";
-import { demoMode, demoDate, sdValidityTest } from "../utils";
+import { demoMode, demoDate, sdValidityTest, canedgeTypeName } from "../utils";
 import Moment from "moment";
 
 export function DeviceImage(props) {
@@ -39,6 +39,7 @@ export function DeviceMeta(props) {
   let deviceFile = deviceFileContent
 
   let log_meta = deviceFile && deviceFile.log_meta;
+  let typeName = canedgeTypeName(deviceFile && deviceFile.type);
   let space_used_mb = deviceFile && deviceFile.space_used_mb;
   let cfg_crc32 = deviceFile && deviceFile.cfg_crc32;
   let fw_ver = deviceFile && deviceFile.fw_ver;
@@ -84,8 +85,14 @@ export function DeviceMeta(props) {
           <table className="table table-background">
             <tbody>
               <tr>
-                <td className="col-md-2">Meta</td>
-                <td>{log_meta}</td>
+                <td className="col-md-2" style={{ whiteSpace: "nowrap" }}>
+                  Type | Meta
+                </td>
+                <td>
+                  {typeName}
+                  {typeName && log_meta ? " | " : null}
+                  {log_meta}
+                </td>
               </tr>
 
               <tr>
@@ -129,25 +136,34 @@ export function DeviceMeta(props) {
 }
 
 export function DeviceMetaLogFileChart(props) {
-  if (
+  const hasChart =
     props.dataUploadTime &&
     props.dataUploadTime.datasets &&
     props.dataUploadTime.datasets.length &&
-    props.dataUploadTime.labels.length
-  ) {
-    return (
-      <div className="col-sm-6">
-        <div className="row">
-          <div className="col-sm-7">
-            <p>Log file data uploaded last week (MB/hour)</p>
-          </div>
-          <div className="col-sm-5 chart-menu">
-            <a href="" onClick={props.dashboard}>
-              status dashboard
-            </a>
-          </div>
-        </div>
+    props.dataUploadTime.labels.length;
 
+  return (
+    <div className="col-sm-6">
+      <div className="row">
+        <div className="col-sm-7">
+          {hasChart ? <p>Log file data uploaded last week (MB/hour)</p> : null}
+        </div>
+        {/* quick links in the upper-right corner, above the plot */}
+        <div className="col-sm-5 chart-menu">
+          <a href="" onClick={props.dashboard}>
+            status dashboard
+          </a>
+          <a
+            href=""
+            onClick={props.otaBatchManager}
+            style={{ marginLeft: "18px" }}
+          >
+            OTA batch manager
+          </a>
+        </div>
+      </div>
+
+      {hasChart ? (
         <div>
           <Bar
             data={props.dataUploadTime}
@@ -156,11 +172,9 @@ export function DeviceMetaLogFileChart(props) {
             key={"bar-chart-logfiles"}
           />
         </div>
-      </div>
-    );
-  } else {
-    return null;
-  }
+      ) : null}
+    </div>
+  );
 }
 
 let periodHours = 7 * 24;
@@ -194,7 +208,11 @@ export const prepareDeviceData = mf4Objects => {
       {
         type: "bar",
         data: Object.values(uploadedPerTime),
-        backgroundColor: "#3d85c6"
+        backgroundColor: "#46a5e0",
+        // chart.js 2.9 reads these from the dataset, not the axis (see
+        // barOptionsFunc) - the period here is fixed at 7*24 h
+        barPercentage: 0.9,
+        maxBarThickness: 5
       }
     ],
     labels: Object.keys(uploadedPerTime)

@@ -1,0 +1,28 @@
+/*----------------------------
+    Sortable table headers (SortableTh.js)
+-----------------------------*/
+
+th.table-sortable {
+    cursor: pointer;
+    user-select: none;
+
+    .table-sort-icon {
+        margin-left: 3px;
+        opacity: 0;
+        transition: opacity 0.2s ease-in;
+    }
+    &:hover {
+        color: @blue;
+
+        .table-sort-icon {
+            opacity: 0.5;
+        }
+    }
+    &.table-sorted {
+        color: @blue;
+
+        .table-sort-icon {
+            opacity: 1;
+        }
+    }
+}

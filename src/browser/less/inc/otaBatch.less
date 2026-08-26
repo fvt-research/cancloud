@@ -1,0 +1,489 @@
+.ota-batch-section {
+    padding: 62px 20px 12px 20px;
+    margin-bottom: -72px;
+
+    @media (max-width: @screen-sm-min) {
+        padding-top: 120px;
+    }
+}
+
+.ota-page-title {
+    display: block;
+    margin: 0 5px 12px 5px;
+    padding-left: 16px;
+    color: @text-color;
+}
+
+.ota-batch-layout {
+    display: flex;
+    align-items: stretch;
+}
+
+.ota-batch-left {
+    flex: 0 0 25%;
+    max-width: 25%;
+    min-width: 260px;
+    height: calc(~"100vh - 218px");
+    display: flex;
+    flex-direction: column;
+}
+
+.ota-batch-left-top {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+}
+
+.ota-batch-left-bottom {
+    flex: 0 0 auto;
+    min-height: 0;
+}
+
+// single left widget with a "Config" / "Firmware" / "TLS" tab strip
+.ota-left-widget {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.ota-tab-strip {
+    display: flex;
+    flex: 0 0 auto;
+    border-bottom: 1px solid #e0e0e0;
+    margin-bottom: 12px;
+}
+
+.ota-tab {
+    flex: 1 1 0;
+    padding: 8px 4px;
+    border: none;
+    border-bottom: 1px solid transparent;
+    background: transparent;
+    color: #555;
+    font-size: 90%;
+    font-weight: 400;
+    text-transform: uppercase;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.ota-tab:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.ota-tab-active {
+    color: @blue;
+    border-bottom-color: @blue;
+}
+
+.ota-tab-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+}
+
+.ota-fw-info {
+    font-size: 12px;
+    margin: 8px 0;
+}
+
+.ota-section-divider {
+    margin: 16px 0;
+    border: 0;
+    border-top: 1px solid #e0e0e0;
+}
+
+.ota-batch-right {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: calc(~"100vh - 228px");
+    display: flex;
+    flex-direction: column;
+}
+
+@media (max-width: 991px) {
+    .ota-batch-layout {
+        display: block;
+    }
+    .ota-batch-left {
+        display: block;
+    }
+    .ota-batch-left,
+    .ota-batch-right {
+        max-width: 100%;
+        height: auto;
+    }
+}
+
+.ota-left-panel {
+    padding: 5px;
+}
+
+.ota-status-row {
+    font-size: 12px;
+    margin-top: 6px;
+}
+
+.ota-steps {
+    margin-top: 8px;
+
+    p,
+    li {
+        font-size: 12px;
+        color: #8e8e8e;
+        margin-bottom: 8px;
+    }
+
+    ol {
+        margin: 0;
+        padding-left: 16px;
+    }
+}
+
+.ota-note-row {
+    color: #ffc107;
+}
+
+.ota-loaded-chip {
+    display: flex;
+    align-items: center;
+    margin-top: 12px;
+    font-size: 12px;
+    color: #999999;
+
+    .ota-chip-remove {
+        background: #999999;
+        color: #ffffff;
+        border: none;
+        border-radius: 3px;
+        cursor: pointer;
+        width: 14px;
+        height: 14px;
+        flex: 0 0 14px;
+        padding: 0;
+        margin-left: 8px;
+        font-size: 9px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+}
+
+.ota-table-controls {
+    display: flex;
+    align-items: center;
+    padding: 5px 5px 12px 5px;
+
+    .ota-search {
+        border: 1px solid #dbdbdb;
+        border-radius: 3px;
+        padding: 6px 12px;
+        width: 280px;
+        max-width: 60%;
+        font-size: 12px;
+        color: @text-color;
+        outline: none;
+
+        &:focus {
+            border-color: @blue;
+        }
+    }
+
+    .ota-progress {
+        margin-left: auto;
+        font-size: 12px;
+        color: @blue;
+        padding-left: 15px;
+        white-space: nowrap;
+
+        .fa {
+            margin-right: 4px;
+        }
+    }
+
+    .ota-counts {
+        margin-left: auto;
+        font-size: 12px;
+        color: #8e8e8e;
+        padding-left: 15px;
+        white-space: nowrap;
+    }
+
+    // when both are shown the progress line takes the free space
+    .ota-progress + .ota-counts {
+        margin-left: 0;
+    }
+
+    .ota-refresh-btn {
+        margin-left: 12px;
+        background: none;
+        border: none;
+        color: #b5b5b5;
+        cursor: pointer;
+        font-size: 12px;
+        padding: 4px 6px;
+        outline: none;
+
+        &:hover {
+            color: @blue;
+        }
+        &[disabled] {
+            cursor: default;
+            opacity: 0.5;
+        }
+    }
+}
+
+.ota-device-table {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.ota-table-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+
+    table {
+        table-layout: fixed;
+        width: 100%;
+        // sum of the fixed column widths + the Status header's own minimum: below
+        // this the table scrolls horizontally instead of wrapping headers
+        min-width: 820px;
+        font-size: 12px;
+        color: #8e8e8e;
+        margin-bottom: 0;
+    }
+    th {
+        white-space: nowrap;
+        vertical-align: bottom;
+    }
+    // Sticky header, two separate reasons rows used to show through it:
+    // 1. the greyed-out ineligible rows set opacity < 1, which creates a
+    //    stacking context - a z-index:auto sticky thead paints UNDER those
+    //    (they come later in the DOM), so the thead needs an explicit z-index
+    // 2. .table-background is translucent, so the cells need their own opaque
+    //    background rather than relying on the table's
+    thead {
+        position: sticky;
+        top: 0;
+        z-index: 3;
+    }
+    thead th {
+        background-color: #fff;
+    }
+    td {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        vertical-align: middle;
+    }
+}
+
+.ota-row-blocked {
+    opacity: 0.55;
+
+    td {
+        color: #8e8e8e;
+    }
+}
+
+.ota-table-scroll .grey-text {
+    color: #8e8e8e;
+}
+
+.ota-status-ready {
+    color: @blue-css;
+}
+
+.ota-status-submitted {
+    color: @brand-success;
+}
+
+.ota-status-error {
+    color: #ff6666;
+}
+
+.orange-text {
+    color: #f0ad4e;
+}
+
+.ota-sec-cell {
+    text-align: center;
+    overflow: visible;
+}
+.ota-lock-encrypted {
+    color: @brand-success;
+}
+.ota-lock-plain {
+    color: @red;
+}
+.ota-lock-mixed {
+    color: @amber;
+}
+.ota-lock-none {
+    color: #8e8e8e;
+}
+
+.ota-encrypt-checkbox {
+    margin-top: 12px;
+    font-size: 12px;
+
+    span {
+        margin-left: 8px;
+    }
+
+    &.is-disabled {
+        cursor: not-allowed;
+
+        input {
+            pointer-events: none;
+        }
+        span {
+            color: #b5b5b5;
+        }
+    }
+}
+
+.btn-small.btn-white {
+    padding: 2px 8px;
+    font-size: 11px;
+}
+
+.ota-download-link {
+    color: @blue-css;
+    cursor: pointer;
+
+    i {
+        margin-right: 4px;
+    }
+    &:hover {
+        color: @blue-css;
+        text-decoration: underline;
+    }
+}
+
+.ota-batch-placeholder {
+    padding: 20px 15px;
+
+    p {
+        font-size: 13px;
+        color: #8e8e8e;
+        margin-bottom: 10px;
+    }
+}
+
+.ota-run-footer {
+    display: flex;
+    align-items: center;
+    margin: 18px 5px 0 5px;
+    padding-top: 20px;
+    border-top: 1px solid #dbdbdb;
+
+    .btn {
+        margin-right: 15px;
+    }
+
+    .btn-primary {
+        min-width: 200px;
+    }
+
+    .ota-run-status {
+        font-size: 12px;
+        color: #8e8e8e;
+        margin-right: 15px;
+    }
+}
+
+.ota-confirm-modal {
+    height: auto;
+    max-height: 80%;
+    top: 10%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 700px;
+    max-width: 92%;
+    display: flex;
+    flex-direction: column;
+
+    .modal-review-changes-header {
+        height: auto;
+        padding: 20px 25px 5px 25px;
+
+        h4 {
+            margin: 0 0 5px 0;
+        }
+    }
+
+    .modal-custom-content {
+        position: static;
+        flex: 1 1 auto;
+        overflow-y: auto;
+    }
+
+    .modal-custom-footer {
+        position: static;
+        height: auto;
+        padding: 15px 25px;
+
+        .btn {
+            min-width: 120px;
+        }
+        .btn + .btn {
+            margin-left: 12px;
+        }
+    }
+
+    .grey-text {
+        color: #999999;
+    }
+}
+
+.ota-confirm-content {
+    padding: 15px 25px;
+}
+
+.ota-confirm-warnings {
+    margin-top: 12px;
+}
+
+.ota-confirm-ack {
+    margin-top: 15px;
+    font-size: 12px;
+
+    > span:first-child {
+        display: inline-flex;
+        align-items: center;
+
+        > .checkbox-design {
+            margin: auto 0;
+        }
+    }
+}
+
+.ota-panel-note {
+    font-size: 12px;
+    margin: 6px 0 0 0;
+}
+
+.home-quicklinks {
+    padding: 10px 0 0 15px;
+
+    a {
+        margin-right: 25px;
+        font-size: 12px;
+    }
+}
+
+.device-meta-links {
+    margin-top: 5px;
+
+    a {
+        margin-right: 25px;
+        font-size: 12px;
+    }
+}

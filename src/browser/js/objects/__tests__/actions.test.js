@@ -20,13 +20,14 @@ import * as actionsObjects from "../actions"
 import * as alertActions from "../../alert/actions"
 import history from "../../history"
 
-jest.mock("../../web", () => ({
-  LoggedIn: jest
+vi.mock("../../web", () => ({
+  default: {
+  LoggedIn: vi
     .fn(() => true)
     .mockReturnValueOnce(true)
     .mockReturnValueOnce(false)
     .mockReturnValueOnce(false),
-  ListObjects: jest.fn(({ bucketName }) => {
+  ListObjects: vi.fn(({ bucketName }) => {
     if (bucketName === "test-deny") {
       return Promise.reject({
         message: "listobjects is denied"
@@ -40,19 +41,19 @@ jest.mock("../../web", () => ({
       })
     }
   }),
-  RemoveObject: jest.fn(({ bucketName, objects }) => {
+  RemoveObject: vi.fn(({ bucketName, objects }) => {
     if (!bucketName) {
       return Promise.reject({ message: "Invalid bucket" })
     }
     return Promise.resolve({})
   }),
-  PresignedGet: jest.fn(({ bucket, object }) => {
+  PresignedGet: vi.fn(({ bucket, object }) => {
     if (!bucket) {
       return Promise.reject({ message: "Invalid bucket" })
     }
     return Promise.resolve({ url: "https://test.com/bk1/pre1/b.txt" })
   }),
-  CreateURLToken: jest
+  CreateURLToken: vi
     .fn()
     .mockImplementationOnce(() => {
       return Promise.resolve({ token: "test" })
@@ -63,6 +64,7 @@ jest.mock("../../web", () => ({
     .mockImplementationOnce(() => {
       return Promise.resolve({ token: "test" })
     })
+  }
 }))
 
 const middlewares = [thunk]
@@ -126,7 +128,8 @@ describe("Objects actions", () => {
     const expectedActions = [
       {
         type: "objects/APPEND_LIST",
-        objects: [{ name: "test1" }, { name: "test2" }],
+        // fetchObjects reverse-sorts by name (latest session folders on top)
+        objects: [{ name: "test2" }, { name: "test1" }],
         marker: "test2",
         isTruncated: false,
         err:false
@@ -187,8 +190,17 @@ describe("Objects actions", () => {
       buckets: { currentBucket: "test" },
       objects: { currentPrefix: "pre1/" }
     })
-    const expectedActions = [{ type: "objects/REMOVE", object: "obj1" }]
-    store.dispatch(actionsObjects.deleteObject("obj1")).then(() => {
+    // deleteObject wraps the removal in the progress-modal queue, so it now
+    // dispatches ADD_QUEUE -> UPDATE_QUEUE -> REMOVE -> STOP_QUEUE.
+    // NOTE: the promise MUST be returned - otherwise a failing assertion here
+    // becomes an unhandled rejection that crashes the whole jest worker.
+    const expectedActions = [
+      { type: "alertModals/ADD_QUEUE", modal: "DELETE", slug: "pre1/obj1", size: 100, name: "pre1/obj1" },
+      { type: "alertModal/UPDATE_QUEUE", slug: "pre1/obj1", loaded: 100 },
+      { type: "objects/REMOVE", object: "obj1" },
+      { type: "alertModals/STOP_QUEUE", slug: "pre1/obj1" }
+    ]
+    return store.dispatch(actionsObjects.deleteObject("obj1")).then(() => {
       const actions = store.getActions()
       expect(actions).toEqual(expectedActions)
     })

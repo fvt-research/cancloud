@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-const StorageClient = require('./storage')
+import * as StorageClient from './storage'
 import { endPointSchema } from './helpers'
 
 export function S3Client(endPoint, accessKey, secretKey, region = '') {

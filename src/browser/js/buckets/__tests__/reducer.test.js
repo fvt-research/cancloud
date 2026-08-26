@@ -27,7 +27,9 @@ describe("buckets reducer", () => {
       filter: "",
       currentBucket: "",
       showBucketPolicy: false,
-      showMakeBucketModal: false
+      showMakeBucketModal: false,
+      bucketName: "",
+      endPoint: ""
     })
   })
 

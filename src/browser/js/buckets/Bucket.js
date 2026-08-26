@@ -25,7 +25,6 @@ export const Bucket = ({ bucket, isActive, selectBucket, bucketsMeta, listLogFil
 
   if(bucketsMeta && bucketsMeta.length > 0){
     deviceName = bucketsMeta.filter(obj => obj.split(" ")[0] == bucket)[0].split(" | ")[0].replace(" "," | ")
-    deviceName = deviceName.length > 30 ? deviceName.substr(0,30) + " ..." : deviceName
   }
   
   return (
@@ -47,10 +46,11 @@ export const Bucket = ({ bucket, isActive, selectBucket, bucketsMeta, listLogFil
           "fesli-loading": false
         })}
         id={bucket}
+        title={deviceName}
       >
         {deviceName}
       </a>
-      {bucket.match(loggerRegex) ? (
+      {bucket && bucket.match(loggerRegex) ? (
         <BucketDropdown bucket={bucket} selectBucket={selectBucket} />
       ) : null}
     </li>

@@ -77,13 +77,14 @@ describe("Uploads actions", () => {
     expect(actions).toEqual(expectedActions)
   })
 
-  describe("uploadFile", () => {
+  // uploadFile suite retired: its only test was already commented out (jest
+  // tolerated an empty describe; vitest errors on it)
+  /*  describe("uploadFile", () => {
     const file = new Blob(["file content"], {
       type: "text/plain"
     })
     file.name = "file1"
-    // No Need to call this test
-   /*  it("creates alerts/SET action when currentBucket is not present", () => {
+    it("creates alerts/SET action when currentBucket is not present", () => {
       const store = mockStore({
         buckets: { currentBucket: "" }
       })
@@ -101,8 +102,8 @@ describe("Uploads actions", () => {
       store.dispatch(uploadsActions.uploadFile(file))
       const actions = store.getActions()
       expect(actions).toEqual(expectedActions)
-    }) */
-  })
+    })
+  }) */
 
   it("creates uploads/STOP and uploads/SHOW_ABORT_MODAL after abortUpload", () => {
     const store = mockStore()

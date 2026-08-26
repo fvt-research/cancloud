@@ -204,6 +204,12 @@
 	}
 }
 
+/* keep each device entry on one line, ellipsizing by width; the full
+   "<deviceId> | <meta>" is shown via the anchor's title tooltip on hover */
+.fesl-inner li > a {
+	.text-overflow();
+}
+
 /* Dropdown */
 .bucket-dropdown {
 	position: absolute;
@@ -257,12 +263,33 @@
 	}
 }
 
+/* react-custom-scrollbars (BucketList) hides the native scrollbars by
+   pushing them 17px outside the clipped wrapper via negative margins; at
+   some zoom levels / fractional layout heights the white native horizontal
+   scrollbar peeks back in as a 1px line above the host block. Remove the
+   native scrollbars entirely and drop the compensating negative margins
+   (the custom .scrollbar-vertical thumb is unaffected) */
+.fesl-inner > div > div:first-child {
+	margin-right: 0 !important;
+	margin-bottom: 0 !important;
+	scrollbar-width: none;
+	-ms-overflow-style: none;
+}
+.fesl-inner > div > div:first-child::-webkit-scrollbar {
+	display: none;
+}
+
 /*--------------------------
     Host
 ----------------------------*/
 .fes-host {
-	position: fixed;
+	/* absolute within the fixed .fe-sidebar (not position: fixed) so it
+	   shares the sidebar's compositing layer - a fixed block rounds to
+	   device pixels independently of the translate3d sidebar at some
+	   zoom levels, leaving a white seam around this corner */
+	position: absolute;
 	left: 0;
+	right: 0;
 	bottom: 0;
 	z-index: 1;
 	background: @dark-gray;
@@ -274,6 +301,7 @@
 	box-sizing: border-box;
 	overflow: hidden;
 	word-break: break-word;
+	.text-overflow();
 
 	& > i {
 		margin-right: 10px;

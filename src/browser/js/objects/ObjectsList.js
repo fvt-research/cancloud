@@ -18,18 +18,15 @@ import React from "react";
 import ObjectContainer from "./ObjectContainer";
 import PrefixContainer from "./PrefixContainer";
 
-export const ObjectsList = ({ objects, sessionMetaList, sessionStartTimeList, sessionObjectsMetaList, objectsS3MetaStart }) => {
-  const list = objects.map(object => {
+export const ObjectsList = ({ objects, sessionMetaList = [], objectsS3MetaStart = [] }) => {
+  const sessionMetaByPrefix = new Map(sessionMetaList.map(session => [session.prefix, session]));
+  const s3MetaStartByName = new Map(objectsS3MetaStart.map(objectMeta => [objectMeta.name, objectMeta]));
 
-    
+  const list = objects.map(object => {
     if (object.name.endsWith("/")) {
-      const sessionMeta = sessionMetaList.filter(session => session.prefix == object.name)[0]
-      const sessionStartTime = sessionStartTimeList.filter(session => session.prefix == object.name)[0]
-      return <PrefixContainer object={object} key={object.name} sessionMeta={sessionMeta} sessionStartTime={sessionStartTime} />;
+      return <PrefixContainer object={object} key={object.name} sessionMeta={sessionMetaByPrefix.get(object.name)} />;
     } else {
-      const objectMeta = sessionObjectsMetaList.filter(objectMeta => objectMeta.name == object.name)[0]
-      const objectS3MetaStart = objectsS3MetaStart.filter(objectMeta => objectMeta.name ==  object.name)[0]
-      return <ObjectContainer object={object} key={object.name} objectMeta={objectMeta} objectS3MetaStart={objectS3MetaStart} />;
+      return <ObjectContainer object={object} key={object.name} objectS3MetaStart={s3MetaStartByName.get(object.name)} />;
     }
   });
   return <div>{list}</div>;

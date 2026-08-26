@@ -32,16 +32,8 @@ describe("BrowserDropdown", () => {
     )
   })
 
-  it("should call fetchServerInfo after its mounted", () => {
-    const fetchServerInfo = jest.fn()
-    const wrapper = shallow(
-      <BrowserDropdown
-        serverInfo={serverInfo}
-        fetchServerInfo={fetchServerInfo}
-      />
-    )
-    expect(fetchServerInfo).toHaveBeenCalled()
-  })
+  // Removed: "should call fetchServerInfo after its mounted" - BrowserDropdown is a
+  // menu-only component now (no lifecycle server-info fetch; that MinIO feature is gone).
 
  /*  it("should show AboutModal when About link is clicked", () => {
     const wrapper = shallow(

@@ -1,0 +1,1 @@
+npm install config-editor-tools@latest --force

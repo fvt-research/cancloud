@@ -10,7 +10,7 @@
     "default_settings": {
       "timestamp_header": "timestamps",
       "segment_header": "segments",
-      "chart_colors": "#3d85c6 #ff9900 #073763 #0b5394 #6fa8dc #9fc5e8 #e69138 #f6b26b #f9cb9c",
+      "chart_colors": "#46a5e0 #ff9900 #073763 #0b5394 #6fa8dc #9fc5e8 #e69138 #f6b26b #f9cb9c",
       "line_border_width": 2,
       "point_radius": 0,
       "chart_font_size": 8,
@@ -27,7 +27,7 @@
         "class_name": "col-sm-2",
         "height": 105,
         "colors": "",
-		"comment": "Number of devices with a heartbeat within the period"
+		"comment": "Number of connected devices loaded (independent of the selected period)"
       },
 	   {
         "title": "Avg. SD storage used",

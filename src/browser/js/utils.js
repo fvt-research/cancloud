@@ -142,6 +142,19 @@ export const isValidDevice = device => {
   return loggerRegex.test(device);
 };
 
+// map the device.json type field to the device type name (unknown codes are shown as-is)
+export const canedgeTypeName = type => {
+  const canedgeTypeNames = {
+    "0000001D": "CE1",
+    "0000005D": "CE1G",
+    "0000001F": "CE2",
+    "0000005F": "CE2G",
+    "0000003D": "CE3",
+    "0000007D": "CE3G"
+  };
+  return type ? canedgeTypeNames[type.toUpperCase()] || type : "";
+};
+
 var options = {
   // options passed to xml2js parser
   explicitRoot: false, // return the root node in the resulting object?

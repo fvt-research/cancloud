@@ -110,6 +110,14 @@ class Web {
     return this.makeCall("ListObjectsRecursive", args);
   }
 
+  ListObjectsRecursivePage(args) {
+    return this.makeCall("ListObjectsRecursivePage", args);
+  }
+
+  ProbeStartAfterSupport(args) {
+    return this.makeCall("ProbeStartAfterSupport", args);
+  }
+
   PresignedGet(args) {
     return this.makeCall("PresignedGet", args);
   }
@@ -120,6 +128,10 @@ class Web {
 
   PresignedPutObject(args) {
     return this.makeCall("PresignedPutObject", args);
+  }
+
+  PresignedPutObjectRaw(args) {
+    return this.makeCall("PresignedPutObjectRaw", args);
   }
 
   PutObjectURL(args) {

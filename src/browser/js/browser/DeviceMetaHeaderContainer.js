@@ -24,6 +24,11 @@ export class DeviceMetaHeaderContainer extends Component {
     history.push("/status-dashboard/");
   }
 
+  otaBatchManager(e) {
+    e.preventDefault();
+    history.push("/ota-batch-manager/");
+  }
+
   UNSAFE_componentWillReceiveProps(nextProps) {
     const { bucket, prefix } = pathSlice(history.location.pathname);
 
@@ -99,6 +104,7 @@ export class DeviceMetaHeaderContainer extends Component {
             dataUploadTime={dataUploadTime}
             barOptions={barOptions}
             dashboard={this.dashboard.bind(this)}
+            otaBatchManager={this.otaBatchManager.bind(this)}
           />
         </div>
       </div>

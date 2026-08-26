@@ -20,20 +20,42 @@ import * as actionsBuckets from "../actions"
 import * as objectActions from "../../objects/actions"
 import history from "../../history"
 
-jest.mock("../../web", () => ({
-  ListBuckets: jest.fn(() => {
+vi.mock("../../web", () => ({
+  default: {
+  ListBuckets: vi.fn(() => {
     return Promise.resolve({ buckets: [{ name: "test1" }, { name: "test2" }] })
   }),
-  MakeBucket: jest.fn(() => {
+  MakeBucket: vi.fn(() => {
     return Promise.resolve()
   }),
-  DeleteBucket: jest.fn(() => {
+  DeleteBucket: vi.fn(() => {
     return Promise.resolve()
-  })
+  }),
+  // selectBucket/fetchBuckets now read the saved endpoint via getEndpointAndBucket()
+  getEndpointAndBucketName: vi.fn(() =>
+    Promise.resolve({ savedEndpoint: { bucketName: "test1", endPoint: "https://example.test" } })
+  )
+  }
 }))
 
-jest.mock("../../objects/actions", () => ({
-  selectPrefix: () => dispatch => {}
+// selectBucket + fetchBuckets fan out into sibling thunks (device-file fetch,
+// dashboard/OTA bootstrap). Stub them as no-ops so these action-creator tests
+// stay focused on the buckets slice and don't hit unmocked web methods.
+vi.mock("../../objects/actions", () => ({
+  selectPrefix: () => () => {}
+}))
+
+vi.mock("../../browser/actions", () => ({
+  fetchDeviceFile: () => () => {}
+}))
+
+vi.mock("../../dashboardStatus/actions", () => ({
+  fetchDeviceFileContentAll: () => () => {},
+  listAllObjects: () => () => {}
+}))
+
+vi.mock("../../otaBatch/actions", () => ({
+  bootstrapDeviceData: () => () => {}
 }))
 
 const middlewares = [thunk]
@@ -159,17 +181,18 @@ describe("Buckets actions", () => {
     })
   })
 
-  it("creates alert/SET, buckets/REMOVE, buckets/SET_LIST and buckets/SET_CURRENT_BUCKET " + 
-     "after deleting the bucket", () => {
+  it("creates alert/SET and buckets/REMOVE after deleting the bucket", () => {
+    // deleteBucket also kicks off an (un-awaited) fetchBuckets() refresh, whose
+    // fan-out is timing-dependent, so assert only the actions deleteBucket itself
+    // dispatches synchronously in its resolve handler.
     const store = mockStore()
-    const expectedActions = [
-      { type: "alert/SET", alert: {id: 0, message: "Bucket 'test3' has been deleted.", type: "info"} },
-      { type: "buckets/REMOVE", bucket: "test3" },
-      { type: "buckets/SET_LIST", buckets: ["test1", "test2"] }
-    ]
     return store.dispatch(actionsBuckets.deleteBucket("test3")).then(() => {
       const actions = store.getActions()
-      expect(actions).toEqual(expectedActions)
+      expect(actions).toContainEqual({
+        type: "alert/SET",
+        alert: { id: 0, message: "Bucket 'test3' has been deleted.", type: "info" }
+      })
+      expect(actions).toContainEqual({ type: "buckets/REMOVE", bucket: "test3" })
     })
   })
 })

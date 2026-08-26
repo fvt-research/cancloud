@@ -24,8 +24,9 @@ import {
   clearDashboardAutoRefreshHandlers,
 } from "./autoRefresh";
 
+import statusConfig from "../../schema/status-config-03.01.json";
+
 const resWide = window.innerWidth > 2000 ? 2 : window.innerWidth > 1800 ? 1 : 0;
-const statusConfig = require(`../../schema/status-config-03.01.json`);
 const confDash = statusConfig.dashboard;
 const chDefaults = confDash.default_settings;
 const chColors = chDefaults.chart_colors.split(" ");
@@ -206,6 +207,9 @@ class DashboardStatusSection extends React.Component {
       <div>
         <div className="dashboard-block" />
         <div className="multi-check-form">
+          <span className="widget-title dashboard-page-title">
+            Status Dashboard
+          </span>
           <div className="period-hours-form">
             <PeriodMenu
               periodHours={this.state.periodHours}
@@ -235,7 +239,7 @@ class DashboardStatusSection extends React.Component {
               <p className="field-description field-description-shift">
                 The log file specific dashboard widgets (e.g. size metrics) are
                 based on this list of devices. By default, data for all devices
-                will be loaded when the server has 3 or fewer devices connected.
+                will be loaded when the server has 10 or fewer devices connected.
                 If more devices are connected, the log file specific metrics are
                 not shown by default.
               </p>
@@ -273,9 +277,10 @@ class DashboardStatusSection extends React.Component {
               &nbsp; &nbsp;
               <p className="field-description field-description-shift">
                 The device-specific dashboard widgets (e.g. heartbeat metrics)
-                are based on this list of devices. By default all devices are
-                loaded (but metrics are only shown for those that have checked
-                in within the period selected).
+                are based on this list of devices and are shown for all loaded
+                devices, regardless of the selected period. By default all
+                devices are loaded. The period only affects the log file
+                widgets.
               </p>
               <button
                 type="button"
@@ -426,6 +431,7 @@ class DashboardStatusSection extends React.Component {
                               chartDataArray[2] ? chartDataArray[2] : []
                             }
                             deviceCrc32Test={chartDataDevicesArray[2]}
+                            deviceEncStatus={this.props.deviceEncStatus}
                             height={tableHeight}
                             deviceLastMf4MetaData={deviceLastMf4MetaData}
                           />
@@ -485,6 +491,7 @@ const mapStateToProps = state => {
     deviceFileObjects: state.dashboardStatus.deviceFileObjects,
     configFileCrc32: state.dashboardStatus.configFileCrc32,
     configFileContents: state.dashboardStatus.configFileContents,
+    deviceEncStatus: state.dashboardStatus.deviceEncStatus,
     loadedFiles: state.dashboardStatus.loadedFiles,
     loadedDevice: state.dashboardStatus.loadedDevice,
     loadedConfig: state.dashboardStatus.loadedConfig,

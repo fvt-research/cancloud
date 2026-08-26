@@ -18,15 +18,17 @@ import React from "react";
 import { Route, Switch } from "react-router-dom";
 
 import Editor from "./editorNew/Editor";
-const Browser =  require("./browser/Browser");
-const Login =  require("./browser/Login");
-const DashboardStatus = require("./dashboardStatus");
+import Browser from "./browser/Browser";
+import Login from "./browser/Login";
+import DashboardStatus from "./dashboardStatus";
+import OtaBatchManager from "./otaBatch";
 
 export const App = () => {
   return (
     <Switch>
       <Route path={"/login"} component={Login} />
       <Route path={"/status-dashboard"} component={DashboardStatus} />
+      <Route path={"/ota-batch-manager"} component={OtaBatchManager} />
       <Route path={"/configuration/:device?"} component={Editor} />
       <Route path={"/:bucket?/*"} component={Browser} />
     </Switch>

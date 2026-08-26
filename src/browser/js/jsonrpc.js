@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-const S3Explorer = require("../../sdk/s3explorer");
+import S3Explorer from "../../sdk/s3explorer";
 
 export default class JSONrpc {
   constructor() {
@@ -72,6 +72,17 @@ export default class JSONrpc {
           options.params.marker
         );
         break;
+      case "ListObjectsRecursivePage":
+        result = s3Explorer.listObjectsRecursivePage(
+          options.params.bucketName,
+          options.params.prefix,
+          options.params.continuationToken,
+          options.params.maxKeys
+        );
+        break;
+      case "ProbeStartAfterSupport":
+        result = s3Explorer.probeStartAfterSupport();
+        break;
       case "MakeBucket":
         result = s3Explorer.makeBucket(options.params.bucketName, "us-east-1");
         break;
@@ -119,6 +130,13 @@ export default class JSONrpc {
         break;
       case "PresignedPutObject":
         result = s3Explorer.presignedPutObject(
+          options.params.bucketName,
+          options.params.objectName,
+          options.params.expiry
+        );
+        break;
+      case "PresignedPutObjectRaw":
+        result = s3Explorer.presignedPutObjectRaw(
           options.params.bucketName,
           options.params.objectName,
           options.params.expiry

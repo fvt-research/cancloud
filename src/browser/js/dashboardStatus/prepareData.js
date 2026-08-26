@@ -1,6 +1,6 @@
 import {demoMode, demoDate} from "../utils";
 
-var speedDate = require("speed-date");
+import speedDate from "speed-date";
 
 let uploadedPerTime = {};
 let mf4ObjectsFiltered = [];
@@ -100,12 +100,16 @@ export const barOptionsFunc = periodHours => {
       ],
       xAxes: [
         {
-          barPercentage: periodHours <= 1 ? 0.2 : 0.9,
-          maxBarThickness: 5,
-          gridLines: { display: false },
+          // chart.js 2.9: barPercentage/maxBarThickness live on the dataset
+          // (see prepareData's dataUploadTime dataset); axis border preserved
+          // via drawOnChartArea:false (2.9 drops it when display is false).
+          // drawTicks:false also removes the space the tick marks reserved, so
+          // ticks.padding restores it (10 = chart.js default tick length)
+          gridLines: { display: true, drawOnChartArea: false, drawTicks: false },
           ticks: {
             beginAtZero: true,
-            maxRotation: 0
+            maxRotation: 0,
+            padding: 10
           },
           type: "time",
           time: {
@@ -145,12 +149,11 @@ export const barOptionsFuncStorageUsed = periodHours => {
       ],
       xAxes: [
         {
-          barPercentage: periodHours <= 1 ? 0.2 : 0.9,
-          maxBarThickness: 5,
-          gridLines: { display: false },
+          gridLines: { display: true, drawOnChartArea: false, drawTicks: false },
           ticks: {
             beginAtZero: true,
-            maxRotation: 0
+            maxRotation: 0,
+            padding: 10
           },
           type: "time",
           time: {
@@ -308,7 +311,9 @@ export const prepareData = (
         {
           type: "bar",
           data: Object.values(uploadedPerTime),
-          backgroundColor: "#3d85c6"
+          backgroundColor: "#46a5e0",
+          barPercentage: periodHours <= 1 ? 0.2 : 0.9,
+          maxBarThickness: 5
         }
       ],
       labels: Object.keys(uploadedPerTime)

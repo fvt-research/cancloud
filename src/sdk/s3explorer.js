@@ -228,26 +228,13 @@ class S3Explorer {
     });
   }
 
-  // list bucket objects from S3 compatible storage
+  // list bucket objects recursively via ListObjects V2 (marker flows in as
+  // `start-after`); V2 keeps Azure-backed gateways (which reject V1 recursive) working
   listObjectsRecursive(bucketName, prefix, marker, cb) {
     var stream;
     let objectNameWithPrefix = bucketName + "/" + prefix;
-    if ("Home" == bucketName) {
-      if (marker == "") {
-        // faster if no marker is available
-        stream = this.s3Client.listObjectsV2(this.bucketName, prefix, true);
-      } else {
-        stream = this.s3Client.listObjects(this.bucketName, prefix, marker, true);
-      }
-
-    } else {
-      stream = this.s3Client.listObjects(
-        this.bucketName,
-        objectNameWithPrefix,
-        marker,
-        true
-      );
-    }
+    let listPrefix = "Home" == bucketName ? prefix : objectNameWithPrefix;
+    stream = this.s3Client.listObjectsV2(this.bucketName, listPrefix, true, marker);
 
     let objectsArray = [];
     let iCount = 0;
@@ -272,6 +259,50 @@ class S3Explorer {
     });
   }
 
+  // one page of a recursive listing, paged by V2 continuation-token (Azure-safe);
+  // returns isTruncated, nextContinuationToken, nextMarker (last key, for boundaries)
+  listObjectsRecursivePage(bucketName, prefix, continuationToken, maxKeys, cb) {
+    let bucketPrefix = "Home" == bucketName ? "" : bucketName + "/";
+    let updatedPrefix = bucketPrefix + prefix;
+    maxKeys = maxKeys ? maxKeys : 1000;
+
+    this.s3Client
+      .listObjectsV2Query(this.bucketName, updatedPrefix, continuationToken || "", "", maxKeys)
+      .on("data", function(result) {
+        let objectsArray = result.objects.filter((obj) => obj.name);
+        let response = StorageResponses.makeDefaultResponse(
+          "objects",
+          objectsArray
+        );
+        response.result.isTruncated = result.isTruncated;
+        let lastKey = objectsArray.length
+          ? objectsArray[objectsArray.length - 1].name
+          : "";
+        response.result.nextMarker = result.isTruncated
+          ? removeFirstOccurence(lastKey, bucketPrefix)
+          : "";
+        response.result.nextContinuationToken = result.isTruncated
+          ? (result.nextContinuationToken || "")
+          : "";
+        cb(null, response);
+      })
+      .on("error", function(err) {
+        cb(err);
+      });
+  }
+
+  // probe ListObjects V2 `start-after` support (Azure gateways reject it) so the
+  // dashboard can fall back. Resolves {supported:bool} - never rejects
+  probeStartAfterSupport(cb) {
+    this.s3Client
+      .listObjectsV2Query(this.bucketName, "", "", "", 1, "cancloud-start-after-probe")
+      .on("data", function() {
+        cb(null, StorageResponses.makeDefaultResponse("supported", true));
+      })
+      .on("error", function() {
+        cb(null, StorageResponses.makeDefaultResponse("supported", false));
+      });
+  }
 
 
   // Make bucket to S3 compatible storage
@@ -457,6 +488,40 @@ class S3Explorer {
       objectNameWithPrefix,
       expiry,
       function (err, presignedUrl) {
+        if (err) {
+          return cb(err);
+        }
+        let response = StorageResponses.makeDefaultResponse(
+          "url",
+          presignedUrl
+        );
+        return cb(err, response);
+      }
+    );
+  }
+
+  /**
+   * @method: presignedPutObjectRaw
+   * @description : presigned PUT URL with the object name taken VERBATIM
+   * (no underscore-to-slash rewrite - that convention is only for the upload
+   * flow's CANedge filename encoding). Needed for names like certs_server.p7b.
+   * @param {*} bucketName
+   * @param {*} objectName
+   * @param {*} expiry
+   * @param {*} cb
+   */
+  presignedPutObjectRaw(bucketName, objectName, expiry, cb) {
+    let objectNameWithPrefix;
+    if ("Home" == bucketName) {
+      objectNameWithPrefix = objectName;
+    } else {
+      objectNameWithPrefix = `${bucketName}/${objectName}`;
+    }
+    this.s3Client.presignedPutObject(
+      this.bucketName,
+      objectNameWithPrefix,
+      expiry,
+      function(err, presignedUrl) {
         if (err) {
           return cb(err);
         }
@@ -709,6 +774,12 @@ S3Explorer.prototype.listPublicBucketObject = promisify(
 S3Explorer.prototype.listObjectsRecursive = promisify(
   S3Explorer.prototype.listObjectsRecursive
 );
+S3Explorer.prototype.listObjectsRecursivePage = promisify(
+  S3Explorer.prototype.listObjectsRecursivePage
+);
+S3Explorer.prototype.probeStartAfterSupport = promisify(
+  S3Explorer.prototype.probeStartAfterSupport
+);
 S3Explorer.prototype.storageInfo = promisify(S3Explorer.prototype.storageInfo);
 S3Explorer.prototype.makeBucket = promisify(S3Explorer.prototype.makeBucket);
 
@@ -734,6 +805,10 @@ S3Explorer.prototype.presignedGet = promisify(
 
 S3Explorer.prototype.presignedPutObject = promisify(
   S3Explorer.prototype.presignedPutObject
+);
+
+S3Explorer.prototype.presignedPutObjectRaw = promisify(
+  S3Explorer.prototype.presignedPutObjectRaw
 );
 
 S3Explorer.prototype.createURLToken = promisify(
@@ -768,4 +843,4 @@ S3Explorer.prototype.getPartialObject = promisify(
   S3Explorer.prototype.getPartialObject
 );
 
-module.exports = S3Explorer;
+export default S3Explorer;

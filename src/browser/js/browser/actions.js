@@ -16,7 +16,6 @@
 
 import web from "../web";
 import Moment from "moment";
-import { getCurrentBucket } from "../buckets/selectors";
 import * as dashboardStatusActions from "../dashboardStatus/actions"
 
 
@@ -55,85 +54,11 @@ export const openDeviceFileTable = () => ({
   type: OPEN_DEVICE_FILE_TABLE
 });
 
-// below fetches content of device.json file
-export const fetchDeviceFileContent = (fileName, device) => {
-  return function (dispatch, getState) {
-    if (fileName == "") {
-      dispatch(setDeviceFileContent(null));
-    } else {
-      const { bucket, prefix } = pathSlice(history.location.pathname);
-      const currentBucket = getCurrentBucket(getState());
-      const expiry = 5 * 24 * 60 * 60 + 1 * 60 * 60 + 0 * 60;
-
-      if (currentBucket && fileName) {
-        return web
-          .PresignedGet({
-            bucket: currentBucket,
-            object: fileName,
-            expiry: expiry,
-          })
-          .then((res) => {
-            fetch(res.url)
-              .then((r) => r.json())
-              .then((data) => {
-                
-                dispatch(setDeviceFileContent(data));
-                dispatch(setPrevDeviceFileDevice(device));
-
-                // get the Configuration File content matching the device.json for use in crc32 comparison
-                let cfg_name = data.cfg_name;
-                let configObject = [
-                  { deviceId: device, name: device + "/" + cfg_name },
-                ];
-
-
-                if (!configObject[0].name.includes("undefined")) {
-                  dispatch(
-                    dashboardStatusActions.fetchConfigFileContentAll(
-                      configObject
-                    )
-                  );
-                }
-                
-              })
-              .catch((e) => {
-                dispatch(setDeviceFileContent(null));
-                dispatch(
-                  alertActions.set({
-                    type: "danger",
-                    message: `Warning: The file ${fileName} is invalid and was not loaded`,
-                    autoClear: true,
-                  })
-                );
-              });
-          })
-          .catch((err) => {
-            if (web.LoggedIn()) {
-              dispatch(
-                alertActions.set({
-                  type: "danger",
-                  message: err.message,
-                  autoClear: true,
-                })
-              );
-            } else {
-              history.push("/login");
-            }
-          });
-      } else if (prefix) {
-        dispatch(setDeviceFileContent(null));
-      } else {
-        dispatch(setDeviceFileContent(null));
-      }
-    }
-  };
-};
-
 export const fetchDeviceFileIfNew = (device) => {
   return function (dispatch, getState) {
     if (
       getState().buckets.currentBucket ==
-        getState().editor.prevDeviceFileDevice ||
+        getState().browser.prevDeviceFileDevice ||
       device == "Home"
     ) {
       return;
@@ -143,38 +68,61 @@ export const fetchDeviceFileIfNew = (device) => {
   };
 };
 
+// fetch the device.json of a device directly - existence (HTTP status), content and
+// upload time (Last-Modified header) all come from a single GET, avoiding the previous
+// device-root listing + chained content fetch
 export const fetchDeviceFile = (device) => {
   return function (dispatch) {
     dispatch(setDeviceFileContent(null));
-    return web
-      .ListObjects({
-        bucketName: device,
-        prefix: "",
-        marker: "",
-      })
-      .then((data) => {
-        const deviceFileObject = data.objects.filter(
-          (p) => p.name === "device.json"
-        )[0];
-        const deviceFileName = deviceFileObject ? deviceFileObject.name : null;
-        const deviceFileLastModified = deviceFileObject
-          ? Moment(deviceFileObject.lastModified).format(
-              "MMMM Do YYYY, h:mm:ss a"
-            )
-          : "";
+    const expiry = 5 * 24 * 60 * 60 + 1 * 60 * 60 + 0 * 60;
 
-        if (deviceFileObject) {
-          dispatch(fetchDeviceFileContent(deviceFileName, device));
-          dispatch(setDeviceFileLastModified(deviceFileLastModified));
-        } else {
-          // dispatch(
-          //   alertActions.set({
-          //     type: "info",
-          //     message: `The device does not have an uploaded device.json file`,
-          //     autoClear: true
-          //   })
-          // );
-        }
+    return web
+      .PresignedGet({
+        bucket: device,
+        object: "device.json",
+        expiry: expiry,
+      })
+      .then((res) => {
+        return fetch(res.url).then((r) => {
+          if (!r.ok) {
+            // the device has no uploaded device.json file
+            return;
+          }
+
+          const deviceFileLastModified = Moment(
+            new Date(r.headers.get("last-modified"))
+          ).format("MMMM Do YYYY, h:mm:ss a");
+
+          return r
+            .json()
+            .then((data) => {
+              dispatch(setDeviceFileContent(data));
+              dispatch(setPrevDeviceFileDevice(device));
+              dispatch(setDeviceFileLastModified(deviceFileLastModified));
+
+              // get the Configuration File content matching the device.json for use in crc32 comparison
+              let cfg_name = data.cfg_name;
+              let configObject = [
+                { deviceId: device, name: device + "/" + cfg_name },
+              ];
+
+              if (!configObject[0].name.includes("undefined")) {
+                dispatch(
+                  dashboardStatusActions.fetchConfigFileContentAll(configObject)
+                );
+              }
+            })
+            .catch((e) => {
+              dispatch(setDeviceFileContent(null));
+              dispatch(
+                alertActions.set({
+                  type: "danger",
+                  message: `Warning: The file device.json is invalid and was not loaded`,
+                  autoClear: true,
+                })
+              );
+            });
+        });
       })
       .catch((err) => {
         if (web.LoggedIn()) {

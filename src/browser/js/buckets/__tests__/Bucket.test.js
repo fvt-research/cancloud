@@ -20,7 +20,7 @@ import { Bucket } from "../Bucket"
 
 describe("Bucket", () => {
   it("should render without crashing", () => {
-    shallow(<Bucket />)
+    shallow(<Bucket bucket={"test"} />)
   })
 
   it("should call selectBucket when clicked", () => {

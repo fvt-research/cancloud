@@ -1,3 +1,4 @@
+import _ from "lodash";
 import Moment from "moment";
 import { demoMode, demoDate } from "../utils";
 
@@ -44,24 +45,30 @@ export const horizontalBarOptionsFunc = (devices) => {
       },
     },
     scales: {
+      // chart.js 2.9 stopped drawing the axis border when gridLines.display is
+      // false (2.8 kept it) - drawOnChartArea:false hides the grid lines while
+      // keeping the border. maxBarThickness moved to the datasets (the axis-
+      // level option is deprecated in 2.9). drawTicks:false also removes the
+      // space the tick marks reserved, so ticks.padding restores it
+      // (10 = chart.js default tick length)
       yAxes: [
         {
-          maxBarThickness: 15,
           display: true,
-          gridLines: { display: false },
+          gridLines: { display: true, drawOnChartArea: false, drawTicks: false },
           ticks: {
             beginAtZero: true,
+            padding: 10,
           },
         },
       ],
       xAxes: [
         {
-          maxBarThickness: 5,
-          gridLines: { display: false },
+          gridLines: { display: true, drawOnChartArea: false, drawTicks: false },
           ticks: {
             beginAtZero: true,
             maxRotation: 0,
             max: devices ? devices : 0,
+            padding: 10,
           },
           scaleLabel: {
             display: true,
@@ -135,24 +142,10 @@ export const prepareDataDevices = (
   deviceFileContents,
   configFileCrc32
 ) => {
-  // filter log files & devices based on time period
-  let periodStartNew = new Date();
-
-  if (demoMode) {
-    periodStartNew = new Date(demoDate);
-  }
-
-  periodStartNew.setTime(
-    periodStartNew.getTime() - periodHours * 60 * 60 * 1000
-  );
-
-  deviceFileObjectsFiltered = deviceFileObjects.filter(
-    (e) => e.lastModified >= periodStartNew
-  );
-
-  const deviceIdList = deviceFileObjectsFiltered.map(
-    (device) => device.deviceId
-  );
+  // Device widgets intentionally include ALL loaded devices, independent of the
+  // selected period. periodHours only scopes the log-file widgets (prepareData.js)
+  // and is unused here.
+  deviceFileObjectsFiltered = deviceFileObjects;
 
   const deviceIdListDelta = deviceFileObjectsFiltered.map((device) => {
     const deviceId = device.deviceId;
@@ -166,9 +159,7 @@ export const prepareDataDevices = (
   });
 
 
-  deviceFileContentsFiltered = deviceFileContents.filter((e) =>
-    e && e.id && deviceIdList.includes(e.id) ? e : null
-  );
+  deviceFileContentsFiltered = deviceFileContents.filter((e) => e && e.id);
 
   // device heartbeat pie chart
   let deviceStatusAry = deviceIdListDelta.map(
@@ -287,7 +278,7 @@ export const prepareDataDevices = (
   let deviceFWSorted = {};
   let deviceFWData = [];
   let deviceFWLabel = [];
-  let deviceFWColorFull = "#666666 #999999 #cfcfcf #3d85c6 #cfe2f3".split(" ");
+  let deviceFWColorFull = "#666666 #999999 #cfcfcf #46a5e0 #cfe2f3".split(" ");
   let deviceFWColor = [];
 
   Object.keys(deviceFWUnsorted)
@@ -364,6 +355,7 @@ export const prepareDataDevices = (
             " "
           ),
           label: "#devices",
+          maxBarThickness: 15,
         },
       ],
       labels: deviceStatusLabel,
@@ -377,7 +369,7 @@ export const prepareDataDevices = (
         },
         {
           data: configCrc32Data,
-          backgroundColor: "#3d85c6 #cfe2f3".split(" "),
+          backgroundColor: "#46a5e0 #cfe2f3".split(" "),
           label: "#devices (config)",
         },
       ],
@@ -391,6 +383,7 @@ export const prepareDataDevices = (
             " "
           ),
           label: "#devices",
+          maxBarThickness: 15,
         },
       ],
       labels: deviceStorageUsedLabel,

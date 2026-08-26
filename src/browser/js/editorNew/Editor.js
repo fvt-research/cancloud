@@ -13,6 +13,7 @@ import {
   EncryptionModal,
   FilterModal,
   BitRateModal,
+  MigrationModal,
 } from "config-editor-tools";
 
 // import other modals
@@ -23,6 +24,8 @@ import Header from "../browser/Header";
 
 // import S3 actions
 import * as actionsEditorS3 from "./actions";
+import * as actionsBuckets from "../buckets/actions";
+import * as actionsOtaBatch from "../otaBatch/actions";
 
 // define UIschema and Rule Schema names for auto-loading purposes
 export const uiSchemaAry = [
@@ -65,16 +68,75 @@ class Editor extends React.Component {
     this.props.fetchFilesS3(prefix);
   }
 
-  UNSAFE_componentWillReceiveProps(nextProps) {
-    if( this.props.currentBucket != "" && this.props.currentBucket != nextProps.currentBucket ){
-      const { bucket, prefix } = pathSlice(history.location.pathname);
+  componentDidUpdate(prevProps) {
+    // react to the ROUTE device changing - covers the sidebar "Configure"
+    // switch AND direct URL (hash) edits. The previous currentBucket-based
+    // trigger missed hash-only navigation, leaving the old device's editor
+    // state active under the new device's URL
+    const prevDevice = prevProps.match && prevProps.match.params.device;
+    const curDevice = this.props.match && this.props.match.params.device;
 
-      this.props.fetchFilesS3(prefix);
+    if (curDevice && curDevice !== prevDevice) {
+      // sets currentBucket + fetches the device.json (skipped when the
+      // sidebar dropdown already did it)
+      if (this.props.currentBucket !== curDevice) {
+        this.props.selectBucket(curDevice);
+      }
+      this.props.fetchFilesS3(curDevice);
     }
+  }
+
+  // return the device.json for auto-load in the encryption tool - ONLY when
+  // it provably belongs to the device being configured. Any gate failing
+  // returns undefined and the tool falls back to manual device.json upload.
+  // Note: a cfg_crc32 mismatch does NOT block - the tool itself shows the
+  // non-blocking checksum warning, exactly as with a manual upload
+  getValidatedDeviceFile() {
+    const { deviceFileContent, editorConfigFiles } = this.props;
+    const { prefix } = pathSlice(history.location.pathname);
+
+    if (!deviceFileContent || !prefix) {
+      return undefined;
+    }
+
+    // the device.json's own id must match the device folder being edited
+    // (race-proof: a stale device.json from a previously selected device can
+    // never pass while the route points at another device)
+    if (deviceFileContent.id !== prefix) {
+      return undefined;
+    }
+
+    // the loaded config must be the device's active config file
+    const configFileName =
+      editorConfigFiles && editorConfigFiles[0] && editorConfigFiles[0].name;
+    if (!configFileName || deviceFileContent.cfg_name !== configFileName) {
+      return undefined;
+    }
+
+    if (
+      typeof deviceFileContent.kpub !== "string" ||
+      deviceFileContent.kpub.length !== 88
+    ) {
+      return undefined;
+    }
+
+    return deviceFileContent;
   }
 
   render() {
     let editorTools = [
+      {
+        name: "migration-modal",
+        comment: "Migrate Configuration File",
+        class: "fa fa-arrow-circle-up",
+        modal: (
+          <MigrationModal
+            showAlert={this.props.showAlert}
+            schemaAry={schemaAry}
+            uiSchemaAry={uiSchemaAry}
+          />
+        ),
+      },
       {
         name: "obd-modal",
         comment: "OBD tool",
@@ -91,7 +153,12 @@ class Editor extends React.Component {
         name: "encryption-modal",
         comment: "Encryption tool",
         class: "fa fa-lock",
-        modal: <EncryptionModal showAlert={this.props.showAlert} />,
+        modal: (
+          <EncryptionModal
+            showAlert={this.props.showAlert}
+            deviceFileContent={this.getValidatedDeviceFile()}
+          />
+        ),
       },
       {
         name: "filter-modal",
@@ -127,6 +194,7 @@ class Editor extends React.Component {
             demoMode={demoMode}
             fetchFileContentExt={this.props.fetchFileContentS3}
             updateConfigFileExt={this.props.updateConfigFileS3}
+            onTransferPartial={this.props.transferPartialToOta}
           />
         </div>
       </div>
@@ -137,6 +205,8 @@ class Editor extends React.Component {
 const mapStateToProps = (state, ownProps) => {
   return {
     currentBucket: state.buckets.currentBucket,
+    deviceFileContent: state.browser.deviceFileContent,
+    editorConfigFiles: state.editor.editorConfigFiles,
   };
 };
 
@@ -144,9 +214,11 @@ const mapDispatchToProps = (dispatch) => {
   return {
     showAlert: (type, message) =>
       dispatch(actionsAlert.set({ type: type, message: message })),
+    selectBucket: (bucket) => dispatch(actionsBuckets.selectBucket(bucket)),
     fetchFilesS3: (prefix) => dispatch(actionsEditorS3.fetchFilesS3(prefix)),
     fetchFileContentS3: (prefix,type) => dispatch(actionsEditorS3.fetchFileContentS3(prefix,type)),
-    updateConfigFileS3: (content, object) => dispatch(actionsEditorS3.updateConfigFileS3(content, object))
+    updateConfigFileS3: (content, object) => dispatch(actionsEditorS3.updateConfigFileS3(content, object)),
+    transferPartialToOta: (payload) => dispatch(actionsOtaBatch.receivePartialFromEditor(payload))
   };
 };
 

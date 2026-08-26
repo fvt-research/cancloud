@@ -49,7 +49,7 @@ import { getS3Endpoint } from './s3-endpoints.js'
 
 import { NotificationConfig, NotificationPoller } from './notification'
 
-var Package = require('../../package.json')
+import Package from '../../package.json'
 
 export class Client {
   constructor(params) {
@@ -640,7 +640,7 @@ export class Client {
   // * `callback(err)` _function_: callback function is called with non `null` value in case of error
   removeIncompleteUpload(bucketName, objectName, cb) {
     if (!isValidBucketName(bucketName)) {
-      throw new errors.isValidBucketNameError('Invalid bucket name: ' + bucketName)
+      throw new errors.InvalidBucketNameError('Invalid bucket name: ' + bucketName)
     }
     if (!isValidObjectName(objectName)) {
       throw new errors.InvalidObjectNameError(`Invalid object name: ${objectName}`)
@@ -1204,7 +1204,10 @@ export class Client {
   }
 
   // list a batch of objects using S3 ListObjects v2
-  listObjectsV2Query(bucketName, prefix, continuationToken, delimiter, maxKeys) {
+  // `startAfter` (optional) positions the listing at an arbitrary key like the V1
+  // `marker`, letting recursive listings run on V2
+  listObjectsV2Query(bucketName, prefix, continuationToken, delimiter, maxKeys, startAfter) {
+    if (startAfter === undefined) startAfter = ''
     if (!isValidBucketName(bucketName)) {
       throw new errors.InvalidBucketNameError('Invalid bucket name: ' + bucketName)
     }
@@ -1219,6 +1222,9 @@ export class Client {
     }
     if (!isNumber(maxKeys)) {
       throw new TypeError('maxKeys should be of type "number"')
+    }
+    if (!isString(startAfter)) {
+      throw new TypeError('startAfter should be of type "string"')
     }
     var queries = []
 
@@ -1238,7 +1244,10 @@ export class Client {
       delimiter = uriEscape(delimiter)
       queries.push(`delimiter=${delimiter}`)
     }
-
+    if (startAfter) {
+      startAfter = uriEscape(startAfter)
+      queries.push(`start-after=${startAfter}`)
+    }
     // no need to escape maxKeys
     if (maxKeys) {
       if (maxKeys >= 1000) {
@@ -1276,9 +1285,12 @@ export class Client {
   //   * `obj.size` _number_: size of the object
   //   * `obj.etag` _string_: etag of the object
   //   * `obj.lastModified` _Date_: modified time stamp
-  listObjectsV2(bucketName, prefix, recursive) {
+  // `startAfter` (optional) seeds the first page at an arbitrary key (like the V1
+  // `marker`); continuation-token drives the rest
+  listObjectsV2(bucketName, prefix, recursive, startAfter) {
     if (prefix === undefined) prefix = ''
     if (recursive === undefined) recursive = false
+    if (startAfter === undefined) startAfter = ''
     if (!isValidBucketName(bucketName)) {
       throw new errors.InvalidBucketNameError('Invalid bucket name: ' + bucketName)
     }
@@ -1290,6 +1302,9 @@ export class Client {
     }
     if (!isBoolean(recursive)) {
       throw new TypeError('recursive should be of type "boolean"')
+    }
+    if (!isString(startAfter)) {
+      throw new TypeError('startAfter should be of type "string"')
     }
     // if recursive is false set delimiter to '/'
     var delimiter = recursive ? '' : '/'
@@ -1304,8 +1319,8 @@ export class Client {
         return
       }
       if (ended) return readStream.push(null)
-      // if there are no objects to push do query for the next batch of objects
-      this.listObjectsV2Query(bucketName, prefix, continuationToken, delimiter, 1000)
+      // next batch; start-after only applies to the first page (no continuationToken yet)
+      this.listObjectsV2Query(bucketName, prefix, continuationToken, delimiter, 1000, continuationToken ? '' : startAfter)
         .on('error', e => readStream.emit('error', e))
         .on('data', result => {
           if (result.isTruncated) {

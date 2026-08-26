@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import createHistory from "history/createHashHistory";
+import { createHashHistory as createHistory } from "history";
 import { minioBrowserPrefix } from "./constants";
 
 const history = createHistory({
