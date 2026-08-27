@@ -29,7 +29,8 @@ describe("buckets reducer", () => {
       showBucketPolicy: false,
       showMakeBucketModal: false,
       bucketName: "",
-      endPoint: ""
+      endPoint: "",
+      s3buckets: []
     })
   })
 

@@ -31,6 +31,9 @@ vi.mock("../../web", () => ({
   DeleteBucket: vi.fn(() => {
     return Promise.resolve()
   }),
+  listS3Buckets: vi.fn(() => {
+    return Promise.resolve({ s3buckets: [] })
+  }),
   // selectBucket/fetchBuckets now read the saved endpoint via getEndpointAndBucket()
   getEndpointAndBucketName: vi.fn(() =>
     Promise.resolve({ savedEndpoint: { bucketName: "test1", endPoint: "https://example.test" } })

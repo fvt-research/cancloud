@@ -1,4 +1,6 @@
 import { defineConfig } from 'vite'
+import { createRequire } from 'node:module'
+const require = createRequire(import.meta.url)
 import react from '@vitejs/plugin-react'
 import { viteSingleFile } from 'vite-plugin-singlefile'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
@@ -129,6 +131,62 @@ const esbuildFsStub = {
   }
 }
 
+// dev-only replacement for the old webpack devServer proxy ("/api": localhost:3000)
+// and the server.js /api/list-buckets handler: answers bucket-listing directly
+// in the vite dev server so `npm start` alone works without a second process.
+const s3BucketListApi = () => ({
+  name: 's3-bucket-list-api',
+  configureServer(server) {
+    server.middlewares.use('/api/list-buckets', (req, res, next) => {
+      if (req.method !== 'POST') return next()
+      let body = ''
+      req.on('data', (c) => { body += c })
+      req.on('end', async () => {
+        const https = require('node:https')
+        const fs = require('node:fs')
+        try {
+          const { accessKey, secretKey, endPoint, region: regionBody } = JSON.parse(body || '{}')
+          if (!accessKey || !secretKey || !endPoint) {
+            res.statusCode = 400
+            res.setHeader('content-type', 'application/json')
+            return res.end(JSON.stringify({ error: 'accessKey, secretKey and endPoint are required' }))
+          }
+          const m = endPoint.match(/^https?:\/\/s3\.([a-z0-9-]+)\.amazonaws\.com\/?$/i)
+          const cfg = {
+            accessKeyId: accessKey,
+            secretAccessKey: secretKey,
+            signatureVersion: 'v4'
+          }
+          if (m) {
+            cfg.region = regionBody || m[1]
+          } else {
+            if (regionBody) cfg.region = regionBody
+            cfg.endpoint = endPoint
+            cfg.s3ForcePathStyle = true
+            if (/^https:/i.test(endPoint)) {
+              const caBundles = [
+                '/etc/ssl/certs/ca-certificates.crt',
+                '/etc/ssl/cert.pem'
+              ].filter((p) => fs.existsSync(p))
+              cfg.httpOptions = {
+                agent: new https.Agent(caBundles.length ? { ca: fs.readFileSync(caBundles[0]) } : { rejectUnauthorized: false })
+              }
+            }
+          }
+          const AWS = require('aws-sdk')
+          const data = await new AWS.S3(cfg).listBuckets().promise()
+          res.setHeader('content-type', 'application/json')
+          res.end(JSON.stringify({ buckets: (data.Buckets || []).map((b) => b.Name) }))
+        } catch (err) {
+          res.statusCode = 500
+          res.setHeader('content-type', 'application/json')
+          res.end(JSON.stringify({ error: String((err && err.message) || err), code: (err && err.code) || 'UNKNOWN' }))
+        }
+      })
+    })
+  }
+})
+
 // One config, three modes:
 //   (default / development)  -> main CANcloud app, outDir site/
 //   --mode simple            -> offline single-file editor, outDir simple/
@@ -140,6 +198,7 @@ export default defineConfig(({ mode }) => {
     base: './',
     publicDir: simple ? false : 'public', // public/customize-css (was CopyWebpackPlugin)
     plugins: [
+      ...(test ? [] : [s3BucketListApi()]),
       rollupPatchDifflib,
       rollupPatchRootClose,
       ...(test ? [] : [rollupFsStub]),
