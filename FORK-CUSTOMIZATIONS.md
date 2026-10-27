@@ -1,12 +1,12 @@
 # Fork Customizations (FVT Telematics)
 
 This fork of [CANcloud](https://github.com/cancloud/cancloud) adds four
-customizations on top of upstream v07.00.00 (base commit `802e8fe`). Upstream
+customizations on top of upstream v07.00.02 (base commit `c889e24`). Upstream
 is adopted as the base: the canonical file set, styles, and Vite/React 18
 build are upstream's. The customizations are additive and isolated, so future
 upstream merges should be low-conflict.
 
-Fork base tag: `v07.00.00-fvt-1`.
+Original fork base tag: `v07.00.00-fvt-1`.
 
 ## 1. S3 bucket enumeration + dashboard-first login
 
@@ -80,12 +80,14 @@ history completeness.
 | `schema/demo-credentials.default.json` | demo region field |
 | `package.json` | `express ^4.21.2` (server.js dep) |
 
-## Verification status (at tag `v07.00.00-fvt-1`)
+## Verification status (upstream v07.00.02 merge)
 
-- `npm test` (vitest): 33/33 files, 376 passed / 1 skipped
-- `npm run build`: clean (3650 modules, only chunk-size advisory)
-- Smoke test: `server.js` on :3000, `POST /api/list-buckets` functional
-  (returns expected credential error with bad keys), static site 200
+- `npm test` (vitest): 35/35 files, 398 passed / 1 skipped
+- `npm run build`: passes (3428 modules; runtime CSS, dependency eval and
+  chunk-size advisories)
+- Smoke test: `server.js` serves the static site and dashboard route (200);
+  `POST /api/list-buckets` rejects missing credentials (400) and enumerates
+  buckets successfully against a local mock S3 server
 
 ## Re-applying on a future upstream merge
 
